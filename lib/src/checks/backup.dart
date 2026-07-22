@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../dart_source.dart';
 import '../findings.dart';
 
 /// C2 — the app's backup adoption, as a failing-able test.
@@ -66,10 +67,15 @@ List<ConformanceFinding> checkBackupConformance({
     }
   }
 
-  // 3. Serializer conformance, scanned over lib/.
+  // 3. Serializer conformance, scanned over lib/. Every scan below runs on
+  // COMMENT-STRIPPED source (string contents blanked too): a
+  // `// BackupEnvelope.unwrap` comment or a doc string is not conformance.
   final libSources = _dartSources(Directory('${root.path}/lib'));
-  final serializers = libSources.entries
-      .where((e) => _serializerClausePattern.hasMatch(e.value))
+  final stripped = {
+    for (final e in libSources.entries) e.key: strippedDartSource(e.value),
+  };
+  final serializers = stripped.entries
+      .where((e) => _serializerDeclarationPattern.hasMatch(e.value))
       .toList();
   if (serializers.isEmpty) {
     findings.add(const ConformanceFinding(
@@ -86,7 +92,7 @@ List<ConformanceFinding> checkBackupConformance({
       ));
     }
     if (!serializers
-        .any((e) => e.value.contains('PreviewableBackupSerializer'))) {
+        .any((e) => _previewableDeclarationPattern.hasMatch(e.value))) {
       findings.add(const ConformanceFinding(
         check,
         'no serializer offers PreviewableBackupSerializer — restores must '
@@ -98,7 +104,7 @@ List<ConformanceFinding> checkBackupConformance({
   // 4. Merge-restore apps must override the destructive-default dialog copy.
   if (mergeSemanticsRestore) {
     for (final override in const ['confirmTitle:', 'confirmActionLabel:']) {
-      if (!libSources.values.any((s) => s.contains(override))) {
+      if (!stripped.values.any((s) => s.contains(override))) {
         findings.add(ConformanceFinding(
           check,
           'merge-restore app never sets $override — the shared package\'s '
@@ -109,9 +115,9 @@ List<ConformanceFinding> checkBackupConformance({
     }
   }
 
-  // 5. The vault freshness/prune hook.
+  // 5. The vault freshness/prune hook — a CALL SITE, not a mere mention.
   if (expectStartupMaintenance &&
-      !libSources.values.any((s) => s.contains('runStartupMaintenance'))) {
+      !stripped.values.any((s) => s.contains('runStartupMaintenance('))) {
     findings.add(const ConformanceFinding(
       check,
       'no call to runStartupMaintenance under lib/ — the vault is never '
@@ -127,11 +133,24 @@ List<ConformanceFinding> checkBackupConformance({
 final _dependencyPattern =
     RegExp(r'^\s+sanctuary_backup_ui\s*:', multiLine: true);
 
-/// An `implements`/`with`/`extends` clause naming `BackupSerializer`.
-/// `[^{]*` keeps the match inside the clause and also accepts the
-/// `PreviewableBackupSerializer` spelling.
-final _serializerClausePattern =
-    RegExp(r'(?:implements|extends|with)\s+[^{]*BackupSerializer');
+/// A class DECLARATION whose `implements`/`extends`/`with` clause names
+/// `BackupSerializer` (the leading `\w*` also accepts the
+/// `PreviewableBackupSerializer` spelling), anchored to one logical line:
+/// `[^{;\n]*` keeps the match inside a single declaration header, and the
+/// trailing word boundary rejects superstring names like
+/// `BackupSerializerRegistry`. Runs on comment-stripped source, so a
+/// commented-out declaration never counts.
+final _serializerDeclarationPattern = RegExp(
+  r'class\s+\w+[^{;\n]*\b(?:implements|extends|with)\b'
+  r'[^{;\n]*\b\w*BackupSerializer\b',
+);
+
+/// Same anchoring, requiring `PreviewableBackupSerializer` specifically in
+/// the declaration clause.
+final _previewableDeclarationPattern = RegExp(
+  r'class\s+\w+[^{;\n]*\b(?:implements|extends|with)\b'
+  r'[^{;\n]*\bPreviewableBackupSerializer\b',
+);
 
 /// Contents of every .dart file under [lib], keyed by path.
 Map<String, String> _dartSources(Directory lib) {

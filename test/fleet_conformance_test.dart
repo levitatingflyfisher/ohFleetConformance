@@ -40,14 +40,17 @@ packages:
     source: path
     version: "0.2.0"
 ''');
+  // Real-looking call sites, deliberately NOT comments: the checks scan
+  // comment-stripped source, so only real code may satisfy them.
   write('lib/backup/serializer.dart', '''
 class FixtureSerializer implements BackupSerializer, PreviewableBackupSerializer {
-  // BackupEnvelope.unwrap(...) / BackupEnvelope.wrap(...)
+  String serialize(String data) => BackupEnvelope.wrap(data);
+  String preview(String raw) => BackupEnvelope.unwrap(raw);
 }
 ''');
   write('lib/main.dart', '''
 void main() {
-  // post-frame: runStartupMaintenance();
+  runStartupMaintenance();
 }
 ''');
   write('budgets.json', jsonEncode({

@@ -245,4 +245,135 @@ void main() {
       isEmpty,
     );
   });
+
+  // --- comments and strings are not conformance ------------------------
+
+  test('BackupEnvelope only in a comment is still a finding', () {
+    writeConformantFixture();
+    writeFile('lib/data/backup/serializer.dart', '''
+class FixtureSerializer implements PreviewableBackupSerializer {
+  // BackupEnvelope.unwrap(...) — a comment is not an envelope
+  String serialize() => '{"v":1}';
+}
+''');
+    final findings = checkBackupConformance(
+      root: root,
+      mergeSemanticsRestore: true,
+    );
+    expect(findings, hasLength(1));
+    expect(findings.single.message, contains('BackupEnvelope'));
+  });
+
+  test('runStartupMaintenance only in a comment is a finding', () {
+    writeConformantFixture();
+    writeFile('lib/main.dart', 'void main() {\n'
+        '  // runStartupMaintenance(); — commented out is not called\n'
+        '}\n');
+    final findings = checkBackupConformance(
+      root: root,
+      mergeSemanticsRestore: true,
+    );
+    expect(findings, hasLength(1));
+    expect(findings.single.message, contains('runStartupMaintenance'));
+  });
+
+  test('runStartupMaintenance inside a string literal is a finding', () {
+    writeConformantFixture();
+    writeFile('lib/main.dart',
+        "void main() { log('runStartupMaintenance()'); }\n");
+    final findings = checkBackupConformance(
+      root: root,
+      mergeSemanticsRestore: true,
+    );
+    expect(findings, hasLength(1));
+    expect(findings.single.message, contains('runStartupMaintenance'));
+  });
+
+  test('a reference without a call site does not satisfy maintenance', () {
+    writeConformantFixture();
+    writeFile('lib/main.dart',
+        'const runStartupMaintenanceDocs = 1;\nvoid main() {}\n');
+    final findings = checkBackupConformance(
+      root: root,
+      mergeSemanticsRestore: true,
+    );
+    expect(findings, hasLength(1));
+    expect(findings.single.message, contains('runStartupMaintenance'));
+  });
+
+  test('confirm-copy overrides in comments do not satisfy a merge app', () {
+    writeConformantFixture();
+    writeFile('lib/backup_config.dart', '''
+final backupConfig = BackupConfig(
+  serializer: FixtureSerializer(),
+  // confirmTitle: 'TODO', confirmActionLabel: 'TODO',
+);
+''');
+    final findings = checkBackupConformance(
+      root: root,
+      mergeSemanticsRestore: true,
+    );
+    expect(findings, hasLength(2));
+    expect(
+      findings.map((f) => f.message).join('\n'),
+      allOf(contains('confirmTitle'), contains('confirmActionLabel')),
+    );
+  });
+
+  // --- the serializer must be a real declaration -----------------------
+
+  test('a serializer declaration in a comment is not a serializer', () {
+    writeConformantFixture();
+    writeFile('lib/data/backup/serializer.dart',
+        '// class FixtureSerializer implements BackupSerializer {}\n');
+    final findings = checkBackupConformance(
+      root: root,
+      mergeSemanticsRestore: true,
+    );
+    expect(findings, hasLength(1));
+    expect(
+      findings.single.message,
+      contains('no class under lib/ implements BackupSerializer'),
+    );
+  });
+
+  test('BackupSerializerRegistry is not a BackupSerializer', () {
+    // A superstring name must not satisfy the clause: the trailing word
+    // boundary is what rejects it.
+    writeConformantFixture();
+    writeFile('lib/data/backup/serializer.dart', '''
+class FixtureRegistry implements BackupSerializerRegistry {
+  final items = <Object>[];
+}
+''');
+    final findings = checkBackupConformance(
+      root: root,
+      mergeSemanticsRestore: true,
+    );
+    expect(findings, hasLength(1));
+    expect(
+      findings.single.message,
+      contains('no class under lib/ implements BackupSerializer'),
+    );
+  });
+
+  test('a clause match may not span lines into unrelated code', () {
+    // `extends num> ... BackupSerializerFactory` used to satisfy the old
+    // unanchored pattern across the newline; a declaration must sit on one
+    // logical line.
+    writeConformantFixture();
+    writeFile('lib/data/backup/serializer.dart', '''
+typedef Check<T extends num> = bool Function(T);
+const dynamic ref = BackupSerializerFactory;
+''');
+    final findings = checkBackupConformance(
+      root: root,
+      mergeSemanticsRestore: true,
+    );
+    expect(findings, hasLength(1));
+    expect(
+      findings.single.message,
+      contains('no class under lib/ implements BackupSerializer'),
+    );
+  });
 }
