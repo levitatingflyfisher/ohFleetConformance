@@ -98,6 +98,47 @@ $designDepBlock''';
     expect(findings.single.message, contains('pubspec.yaml'));
   });
 
+  test('a commented path line in the block is skipped, not taken', () {
+    // The real path below the comment is canonical; the '# path:' comment
+    // must not be read as the dependency's path.
+    writeFile('pubspec.yaml', pubspecWith('''
+  openhearth_design:
+    # path: packages/openhearth_design
+    path: ../../ohStyle/openhearth_design
+'''));
+    expect(checkCanonicalDesignPackage(root: root), isEmpty);
+  });
+
+  test('a block whose only path line is a comment has no path', () {
+    writeFile('pubspec.yaml', pubspecWith('''
+  openhearth_design:
+    # path: ../../ohStyle/openhearth_design
+'''));
+    final findings = checkCanonicalDesignPackage(root: root);
+    expect(findings, hasLength(1));
+    expect(findings.single.message, contains('path dependency'));
+  });
+
+  test('a fork in dependency_overrides fails even with a clean dependency',
+      () {
+    // firstMatch-only parsing examined the dependencies entry and never the
+    // override — the override is what pub actually resolves.
+    writeFile('pubspec.yaml', '''
+name: fixture_app
+dependencies:
+  flutter:
+    sdk: flutter
+$canonicalDep
+dependency_overrides:
+  openhearth_design:
+    path: packages/openhearth_design
+''');
+    final findings = checkCanonicalDesignPackage(root: root);
+    expect(findings, hasLength(1));
+    expect(findings.single.message, contains('vendored fork'));
+    expect(findings.single.message, contains('packages/openhearth_design'));
+  });
+
   // --- canonicalTokenValuesFrom ---------------------------------------
 
   test('canonicalTokenValuesFrom extracts every Color hex literal', () {

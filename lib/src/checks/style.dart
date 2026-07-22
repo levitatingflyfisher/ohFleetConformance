@@ -55,8 +55,10 @@ final _designDepKeyPattern = RegExp(
 final _pathValuePattern = RegExp(r'''path:\s*["']?([^"'\s#}]+)''');
 
 List<ConformanceFinding> _designDependencyFindings(String pubspecYaml) {
-  final key = _designDepKeyPattern.firstMatch(pubspecYaml);
-  if (key == null) {
+  // EVERY occurrence of the key is examined — `dependency_overrides` is
+  // what pub actually resolves, and firstMatch-only parsing never saw it.
+  final keys = _designDepKeyPattern.allMatches(pubspecYaml).toList();
+  if (keys.isEmpty) {
     return const [
       ConformanceFinding(
         _check,
@@ -65,7 +67,15 @@ List<ConformanceFinding> _designDependencyFindings(String pubspecYaml) {
       ),
     ];
   }
+  return [
+    for (final key in keys) ..._designDepOccurrenceFindings(pubspecYaml, key),
+  ];
+}
 
+List<ConformanceFinding> _designDepOccurrenceFindings(
+  String pubspecYaml,
+  RegExpMatch key,
+) {
   // The dependency's path lives either inline after the key
   // (`openhearth_design: {path: ...}`) or on a more-indented line below it.
   String? path;
@@ -76,6 +86,9 @@ List<ConformanceFinding> _designDependencyFindings(String pubspecYaml) {
     final keyIndent = key.group(1)!.length;
     for (final line in pubspecYaml.substring(key.end).split('\n')) {
       if (line.trim().isEmpty) continue;
+      // A '# path: ...' comment is not the path — skip comment lines
+      // before both the dedent check and the value match.
+      if (line.trimLeft().startsWith('#')) continue;
       if (line.length - line.trimLeft().length <= keyIndent) break;
       final match = _pathValuePattern.firstMatch(line);
       if (match != null) {
