@@ -54,6 +54,24 @@ jobs:
     expect(canonicalFlutterTestConfig, contains('FontManifest.json'));
   });
 
+  test('the template guards each font family individually', () {
+    // One family's failure must log and continue, not abort the families
+    // after it: MaterialIcons loads first, so a single catch-all around the
+    // loop would let its failure silently kill Lora/Nunito. The family loop
+    // must therefore carry its own try INSIDE the loop body.
+    final body = canonicalFlutterTestConfig.substring(
+      canonicalFlutterTestConfig.indexOf('_loadAppBundledFonts() async'),
+      canonicalFlutterTestConfig.indexOf('_loadSdkFonts() async'),
+    );
+    final loopRegion =
+        body.substring(body.indexOf('for (final dynamic entry in families)'));
+    expect(loopRegion, contains('try {'));
+    expect(loopRegion, contains('await loader.load();'));
+    // And the guard swallowing a family's failure must not be silent.
+    expect(loopRegion, contains('catch'));
+    expect(loopRegion, contains('print('));
+  });
+
   test('missing test/flutter_test_config.dart is a finding', () {
     writeConformant();
     File('${root.path}/test/flutter_test_config.dart').deleteSync();
