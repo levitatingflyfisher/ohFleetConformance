@@ -264,4 +264,66 @@ const warmAccent = Color(0xFFA85040);
       isEmpty,
     );
   });
+
+  test('a token hex in a doc comment is not a retype', () {
+    writeFile('lib/theme.dart',
+        '/// The canonical hearth is 0xFFA85040 — see openhearth_design.\n'
+        'const own = Color(0xFF336699);\n');
+    expect(
+      checkNoRetypedTokenLiterals(
+        root: root,
+        canonicalTokenValues: {hearth500, sage500},
+      ),
+      isEmpty,
+    );
+  });
+
+  test('a token hex inside a string literal is not a retype', () {
+    writeFile('lib/theme.dart', "const label = 'brand 0xFFA85040';\n");
+    expect(
+      checkNoRetypedTokenLiterals(
+        root: root,
+        canonicalTokenValues: {hearth500, sage500},
+      ),
+      isEmpty,
+    );
+  });
+
+  test('a 16-digit mask whose first 8 digits equal a token is not flagged',
+      () {
+    // The pattern had no trailing boundary, so the first 8 hex digits of a
+    // longer literal matched on their own.
+    writeFile('lib/theme.dart', 'const mask = 0xFFA85040DEADBEEF;\n');
+    expect(
+      checkNoRetypedTokenLiterals(
+        root: root,
+        canonicalTokenValues: {hearth500, sage500},
+      ),
+      isEmpty,
+    );
+  });
+
+  test('line numbers survive comment stripping', () {
+    writeFile('lib/theme.dart', '/* block\n   comment\n*/\n'
+        'const warmAccent = Color(0xFFA85040);\n');
+    final findings = checkNoRetypedTokenLiterals(
+      root: root,
+      canonicalTokenValues: {hearth500, sage500},
+    );
+    expect(findings, hasLength(1));
+    expect(findings.single.message, contains('lib/theme.dart:4'));
+  });
+
+  test('canonicalTokenValuesFrom ignores commented-out tokens', () {
+    writeFile('design/lib/src/colors.dart', '''
+abstract final class OhColors {
+  // static const retired = Color(0xFF111111);
+  static const hearth500 = Color(0xFFA85040);
+}
+''');
+    expect(
+      canonicalTokenValuesFrom(Directory('${root.path}/design')),
+      {hearth500},
+    );
+  });
 }

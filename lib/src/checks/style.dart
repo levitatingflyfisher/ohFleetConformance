@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../dart_source.dart';
 import '../findings.dart';
 
 const _check = 'C1-style';
@@ -11,8 +12,10 @@ const _canonicalPathFragment = 'ohStyle/openhearth_design';
 /// Where the Reckon-style vendored fork lives when an app has one.
 const _forkDirRelPath = 'packages/openhearth_design';
 
-/// Matches an 0xAARRGGBB literal — the form every design token takes.
-final _hexLiteralPattern = RegExp(r'0x[0-9A-Fa-f]{8}');
+/// Matches an 0xAARRGGBB literal — the form every design token takes. The
+/// trailing lookahead stops the first 8 digits of a LONGER literal (a
+/// 16-digit bit mask) from matching on their own.
+final _hexLiteralPattern = RegExp(r'0x[0-9A-Fa-f]{8}(?![0-9A-Fa-f])');
 
 /// C1 — the design grammar has ONE source of truth.
 ///
@@ -152,8 +155,10 @@ Set<int> canonicalTokenValuesFrom(Directory designPackageRoot) {
       'refusing to run the retyped-token check against an empty token set',
     );
   }
+  // Comment-stripped: a commented-out (retired) token must not widen the
+  // canonical set and flag apps for a value that is no longer exported.
   return _hexLiteralPattern
-      .allMatches(colors.readAsStringSync())
+      .allMatches(strippedDartSource(colors.readAsStringSync()))
       .map((m) => int.parse(m.group(0)!.substring(2), radix: 16))
       .toSet();
 }
@@ -188,7 +193,10 @@ List<ConformanceFinding> checkNoRetypedTokenLiterals({
   final findings = <ConformanceFinding>[];
   for (final file in files) {
     final relative = file.path.substring(root.path.length + 1);
-    final lines = file.readAsLinesSync();
+    // Strip comments/strings first (newline-preserving, so the reported
+    // line numbers stay true): a hex in a doc comment or a label string is
+    // not a retyped token.
+    final lines = strippedDartSource(file.readAsStringSync()).split('\n');
     for (var i = 0; i < lines.length; i++) {
       for (final match in _hexLiteralPattern.allMatches(lines[i])) {
         final literal = match.group(0)!;
