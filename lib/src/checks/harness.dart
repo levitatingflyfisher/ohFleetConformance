@@ -88,10 +88,30 @@ List<ConformanceFinding> checkHarnessCanon({
   } else {
     for (final workflow in workflows) {
       final name = workflow.uri.pathSegments.last;
-      for (final match in
-          _flutterVersionPattern.allMatches(workflow.readAsStringSync())) {
-        final value = _unquote(match.group(1)!);
-        if (value != requiredCiFlutterVersion) {
+      // Comment content is ignored line by line: '# flutter-version: …'
+      // notes are not pins, and a commented-out flutter-action step is not
+      // a Flutter setup.
+      final lines = workflow
+          .readAsStringSync()
+          .replaceAll('\r\n', '\n')
+          .split('\n')
+          .map(_stripYamlComment)
+          .toList();
+      var pinned = false;
+      for (final line in lines) {
+        final match = _flutterVersionPattern.firstMatch(line);
+        if (match == null) continue;
+        pinned = true;
+        final value = _unquote(match.group(1)!.trim());
+        if (value.startsWith(r'${{')) {
+          findings.add(ConformanceFinding(
+            check,
+            '.github/workflows/$name pins flutter-version through a GitHub '
+            'expression ($value) — an expression pin cannot be verified '
+            'against the fleet pin $requiredCiFlutterVersion; write the '
+            'literal version',
+          ));
+        } else if (value != requiredCiFlutterVersion) {
           findings.add(ConformanceFinding(
             check,
             '.github/workflows/$name pins flutter-version: $value but the '
@@ -99,6 +119,15 @@ List<ConformanceFinding> checkHarnessCanon({
             'how fictional Flutter versions ship',
           ));
         }
+      }
+      if (!pinned &&
+          lines.any((l) => l.contains('subosito/flutter-action'))) {
+        findings.add(ConformanceFinding(
+          check,
+          '.github/workflows/$name uses subosito/flutter-action with no '
+          'flutter-version at all — an unpinned setup floats to whatever '
+          'Flutter the action ships next; pin $requiredCiFlutterVersion',
+        ));
       }
     }
   }
@@ -129,8 +158,22 @@ int? _firstDivergingLine(String actual, String canonical) {
 }
 
 // Matches `flutter-version:` but never `flutter-version-file:` (the literal
-// must be followed by optional whitespace then a colon).
-final _flutterVersionPattern = RegExp(r'flutter-version\s*:\s*([^\s#]+)');
+// must be followed by optional whitespace then a colon). Applied per
+// comment-stripped line, capturing the rest of the line so an expression
+// value (`${{ env.X }}`) survives whole.
+final _flutterVersionPattern = RegExp(r'flutter-version\s*:\s*(.+)$');
+
+/// The line up to its YAML comment: '#' starts a comment at line start or
+/// after whitespace (a '#' inside a value does not).
+String _stripYamlComment(String line) {
+  for (var i = 0; i < line.length; i++) {
+    if (line[i] == '#' &&
+        (i == 0 || line[i - 1] == ' ' || line[i - 1] == '\t')) {
+      return line.substring(0, i);
+    }
+  }
+  return line;
+}
 
 /// YAML quoting is not drift: '3.38.7', "3.38.7", and bare 3.38.7 are the
 /// same pin.

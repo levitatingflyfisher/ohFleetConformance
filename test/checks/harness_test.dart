@@ -153,4 +153,77 @@ jobs:
     expect(findings.single.message, contains('deploy.yaml'));
     expect(findings.single.message, contains('3.44.x'));
   });
+
+  test('a flutter-version inside a YAML comment is not a pin', () {
+    writeConformant();
+    write(
+      '.github/workflows/ci.yml',
+      '# flutter-version: 3.44.x — an old note, not a pin\n'
+      '${workflowPinned("'3.38.7'")}',
+    );
+    expect(checkHarnessCanon(root: root), isEmpty);
+  });
+
+  test('an expression pin is its own finding, not a literal mismatch', () {
+    writeConformant();
+    write(
+      '.github/workflows/ci.yml',
+      workflowPinned(r'${{ env.FLUTTER_VERSION }}'),
+    );
+    final findings = checkHarnessCanon(root: root);
+    expect(findings, hasLength(1));
+    expect(findings.single.message, contains('ci.yml'));
+    expect(findings.single.message, contains('expression'));
+    expect(findings.single.message, contains('env.FLUTTER_VERSION'));
+  });
+
+  test('flutter-action with no flutter-version at all is a finding', () {
+    // The silent-pass hole: a workflow that sets up Flutter but never pins
+    // it floats to whatever the action ships next.
+    writeConformant();
+    write('.github/workflows/ci.yml', '''
+name: CI
+on: [push]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+      - run: flutter test
+''');
+    final findings = checkHarnessCanon(root: root);
+    expect(findings, hasLength(1));
+    expect(findings.single.message, contains('ci.yml'));
+    expect(findings.single.message, contains('no flutter-version'));
+  });
+
+  test('a workflow without flutter-action needs no pin', () {
+    writeConformant();
+    write('.github/workflows/pages.yml', '''
+name: Pages
+on: [push]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+''');
+    expect(checkHarnessCanon(root: root), isEmpty);
+  });
+
+  test('a commented-out flutter-action does not demand a pin', () {
+    writeConformant();
+    write('.github/workflows/pages.yml', '''
+name: Pages
+on: [push]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # - uses: subosito/flutter-action@v2
+''');
+    expect(checkHarnessCanon(root: root), isEmpty);
+  });
 }
