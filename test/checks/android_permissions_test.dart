@@ -90,4 +90,47 @@ ${permissions.map((p) => '    <uses-permission android:name="$p" />').join('\n')
     expect(findings, hasLength(1));
     expect(findings.single.message, contains('AndroidManifest.xml'));
   });
+
+  test('a commented-out uses-permission is not declared', () {
+    writeManifest('''
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- <uses-permission android:name="$internet" /> -->
+    <application android:label="fixture"></application>
+</manifest>
+''');
+    expect(
+      checkAndroidPermissions(root: root, allowlist: {}),
+      isEmpty,
+    );
+  });
+
+  test('a multi-line comment hiding a uses-permission is not declared', () {
+    writeManifest('''
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      dev-only, disabled:
+      <uses-permission android:name="$internet" />
+    -->
+    <uses-permission android:name="$notifications" />
+    <application android:label="fixture"></application>
+</manifest>
+''');
+    expect(
+      checkAndroidPermissions(root: root, allowlist: {notifications}),
+      isEmpty,
+    );
+  });
+
+  test('single-quoted android:name attributes are recognized', () {
+    writeManifest('''
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name='$vibrate' />
+    <application android:label="fixture"></application>
+</manifest>
+''');
+    expect(
+      checkAndroidPermissions(root: root, allowlist: {vibrate}),
+      isEmpty,
+    );
+  });
 }

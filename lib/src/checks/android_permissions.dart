@@ -48,11 +48,16 @@ List<ConformanceFinding> checkAndroidPermissions({
   return findings;
 }
 
+/// `<!-- ... -->`, including multi-line bodies: a commented-out permission
+/// is not a declared permission.
+final _xmlCommentPattern = RegExp(r'<!--.*?-->', dotAll: true);
+
+/// `android:name` in single OR double quotes — both are valid XML.
 final _usesPermissionPattern = RegExp(
-  r'<uses-permission[^>]*android:name\s*=\s*"([^"]+)"',
+  '<uses-permission[^>]*android:name\\s*=\\s*(?:"([^"]+)"|\'([^\']+)\')',
 );
 
 Set<String> _usesPermissions(String manifestXml) => _usesPermissionPattern
-    .allMatches(manifestXml)
-    .map((m) => m.group(1)!)
+    .allMatches(manifestXml.replaceAll(_xmlCommentPattern, ''))
+    .map((m) => (m.group(1) ?? m.group(2))!)
     .toSet();
