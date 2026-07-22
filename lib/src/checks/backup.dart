@@ -135,21 +135,24 @@ final _dependencyPattern =
 
 /// A class DECLARATION whose `implements`/`extends`/`with` clause names
 /// `BackupSerializer` (the leading `\w*` also accepts the
-/// `PreviewableBackupSerializer` spelling), anchored to one logical line:
-/// `[^{;\n]*` keeps the match inside a single declaration header, and the
+/// `PreviewableBackupSerializer` spelling), anchored to one LOGICAL line:
+/// `[^{;]*` keeps the match inside a single declaration header (a header
+/// always ends at its body's `{` or a `;`), while still crossing the
+/// newline `dart format` inserts when it wraps the fleet's >80-col
+/// declarations (`class FooBackupSerializer\n    implements ...`). The
 /// trailing word boundary rejects superstring names like
 /// `BackupSerializerRegistry`. Runs on comment-stripped source, so a
 /// commented-out declaration never counts.
 final _serializerDeclarationPattern = RegExp(
-  r'class\s+\w+[^{;\n]*\b(?:implements|extends|with)\b'
-  r'[^{;\n]*\b\w*BackupSerializer\b',
+  r'class\s+\w+[^{;]*\b(?:implements|extends|with)\b'
+  r'[^{;]*\b\w*BackupSerializer\b',
 );
 
 /// Same anchoring, requiring `PreviewableBackupSerializer` specifically in
 /// the declaration clause.
 final _previewableDeclarationPattern = RegExp(
-  r'class\s+\w+[^{;\n]*\b(?:implements|extends|with)\b'
-  r'[^{;\n]*\bPreviewableBackupSerializer\b',
+  r'class\s+\w+[^{;]*\b(?:implements|extends|with)\b'
+  r'[^{;]*\bPreviewableBackupSerializer\b',
 );
 
 /// Contents of every .dart file under [lib], keyed by path.

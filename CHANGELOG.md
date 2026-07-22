@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.1
+
+- **C2 backup**: the serializer-declaration anchor is logical-line, not
+  physical-line. 0.2.0's `[^{;\n]*` clause anchor could not cross the
+  newline `dart format` inserts when it wraps the fleet's >80-col
+  declarations (`class FooBackupSerializer\n    implements ...`), so
+  every adopted app failed C2 for conforming code. The anchor now stops
+  at the header's `{`/`;` instead of at newlines — still rejecting the
+  newline-spanning non-declaration matches 0.2.0 shut out.
+
 ## 0.2.0
 
 The checks now scan code, not comments — a review pass found that most

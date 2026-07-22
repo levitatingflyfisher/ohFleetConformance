@@ -357,6 +357,29 @@ class FixtureRegistry implements BackupSerializerRegistry {
     );
   });
 
+  test('a dart-format wrapped declaration is still a serializer', () {
+    // Every adopted app's declaration is >80 cols, so `dart format` wraps
+    // the implements clause onto its own line:
+    //   class LiltBackupSerializer
+    //       implements BackupSerializer, PreviewableBackupSerializer {
+    // The clause anchor must treat the wrapped header as ONE logical line
+    // (stop at `{`/`;`, not at `\n`) or the whole fleet fails C2 for
+    // conforming code.
+    writeConformantFixture();
+    writeFile('lib/data/backup/serializer.dart', '''
+import 'package:sanctuary_backup_ui/sanctuary_backup_ui.dart';
+
+class FixtureSerializer
+    implements BackupSerializer, PreviewableBackupSerializer {
+  String serialize() => BackupEnvelope.wrap('{}');
+}
+''');
+    expect(
+      checkBackupConformance(root: root, mergeSemanticsRestore: true),
+      isEmpty,
+    );
+  });
+
   test('a clause match may not span lines into unrelated code', () {
     // `extends num> ... BackupSerializerFactory` used to satisfy the old
     // unanchored pattern across the newline; a declaration must sit on one
