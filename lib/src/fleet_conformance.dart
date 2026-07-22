@@ -91,28 +91,59 @@ Map<FleetCheck, List<ConformanceFinding>> collectFleetFindings(
 }) {
   final results = <FleetCheck, List<ConformanceFinding>>{};
   for (final check in config.checks) {
-    results[check] = switch (check) {
-      FleetCheck.c1Style => _styleFindings(config, root),
-      FleetCheck.c2Backup => checkBackupConformance(
-          root: root,
-          mergeSemanticsRestore: config.mergeSemanticsRestore,
-          expectStartupMaintenance: config.expectStartupMaintenance,
-        ),
-      FleetCheck.c3Budgets => checkSizeBudgets(root: root),
-      FleetCheck.c4Permissions => checkAndroidPermissions(
-          root: root,
-          allowlist: config.androidPermissions,
-        ),
-      FleetCheck.c6Harness => checkHarnessCanon(
-          root: root,
-          analysisOptionsOverrideRecorded:
-              config.analysisOptionsOverrideRecorded,
-          requiredCiFlutterVersion: config.requiredCiFlutterVersion,
-        ),
-    };
+    results[check] = _guarded(
+      check,
+      () => switch (check) {
+        FleetCheck.c1Style => _styleFindings(config, root),
+        FleetCheck.c2Backup => checkBackupConformance(
+            root: root,
+            mergeSemanticsRestore: config.mergeSemanticsRestore,
+            expectStartupMaintenance: config.expectStartupMaintenance,
+          ),
+        FleetCheck.c3Budgets => checkSizeBudgets(root: root),
+        FleetCheck.c4Permissions => checkAndroidPermissions(
+            root: root,
+            allowlist: config.androidPermissions,
+          ),
+        FleetCheck.c6Harness => checkHarnessCanon(
+            root: root,
+            analysisOptionsOverrideRecorded:
+                config.analysisOptionsOverrideRecorded,
+            requiredCiFlutterVersion: config.requiredCiFlutterVersion,
+          ),
+      },
+    );
   }
   return results;
 }
+
+/// A check that throws must fail as a finding on THAT check — never
+/// propagate and take the four unrelated checks (and their tests) down
+/// with it.
+List<ConformanceFinding> _guarded(
+  FleetCheck check,
+  List<ConformanceFinding> Function() evaluate,
+) {
+  try {
+    return evaluate();
+  } catch (e) {
+    return [
+      ConformanceFinding(
+        _checkLabel(check),
+        'check threw instead of reporting findings: $e — fix the check or '
+        'the input it was reading',
+      ),
+    ];
+  }
+}
+
+String _checkLabel(FleetCheck check) => switch (check) {
+      FleetCheck.c1Style => 'C1-style',
+      FleetCheck.c2Backup => 'C2-backup',
+      FleetCheck.c3Budgets => 'C3-budgets',
+      FleetCheck.c4Permissions => 'C4-permissions',
+      FleetCheck.c6Harness => 'C6-harness',
+    };
 
 List<ConformanceFinding> _styleFindings(FleetAppConfig config, Directory root) {
   final findings = checkCanonicalDesignPackage(root: root).toList();
@@ -141,11 +172,15 @@ List<ConformanceFinding> _styleFindings(FleetAppConfig config, Directory root) {
 /// ```
 void runFleetConformance(FleetAppConfig config, {Directory? root}) {
   final appRoot = root ?? Directory.current;
+  // One shared evaluation per suite, computed lazily inside the first test
+  // that needs it: five tests re-running collectFleetFindings meant five
+  // rounds of identical filesystem work for no extra signal.
+  Map<FleetCheck, List<ConformanceFinding>>? memo;
   group('fleet conformance (${config.appId})', () {
     for (final check in config.checks) {
       test(check.name, () {
         final findings =
-            collectFleetFindings(config, root: appRoot)[check]!;
+            (memo ??= collectFleetFindings(config, root: appRoot))[check]!;
         expect(
           findings,
           isEmpty,

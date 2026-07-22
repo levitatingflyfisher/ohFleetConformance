@@ -175,6 +175,41 @@ void main() {
         contains('colors.dart'),
       );
     });
+
+    test('a check that throws becomes a finding for that check only', () {
+      // An unreadable lib file (invalid UTF-8) makes the source-scanning
+      // checks throw on read. That must surface as findings on THOSE
+      // checks — never crash the whole map or taint unrelated checks.
+      File('${app.path}/lib/garbage.dart')
+          .writeAsBytesSync([0xC3, 0x28, 0xFF, 0x00]);
+      final results = collectFleetFindings(fixtureConfig, root: app);
+      expect(results.keys.toSet(), FleetCheck.values.toSet());
+      expect(results[FleetCheck.c1Style], isNotEmpty); // reads lib sources
+      expect(results[FleetCheck.c2Backup], isNotEmpty); // reads lib sources
+      expect(results[FleetCheck.c3Budgets], isEmpty);
+      expect(results[FleetCheck.c4Permissions], isEmpty);
+      expect(results[FleetCheck.c6Harness], isEmpty);
+    });
+  });
+
+  group('runFleetConformance evaluates the checks once per suite', () {
+    final memoParent = Directory.systemTemp.createTempSync('ohfc_memo_');
+    final memoApp = buildConformantFixture(memoParent);
+    var testsSeen = 0;
+    setUp(() {
+      testsSeen++;
+      if (testsSeen > 1 && memoParent.existsSync()) {
+        // Destroy the fixture after the first check test has run: with one
+        // shared (memoized) evaluation the remaining checks must still
+        // pass; re-running the filesystem work per test would now find a
+        // gutted app and fail every one of them.
+        memoParent.deleteSync(recursive: true);
+      }
+    });
+    tearDownAll(() {
+      if (memoParent.existsSync()) memoParent.deleteSync(recursive: true);
+    });
+    runFleetConformance(fixtureConfig, root: memoApp);
   });
 
   // Integration: the wrapper registered below runs the real checks as real
