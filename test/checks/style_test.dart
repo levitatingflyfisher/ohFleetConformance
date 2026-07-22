@@ -119,6 +119,48 @@ $designDepBlock''';
     expect(findings.single.message, contains('path dependency'));
   });
 
+  test('a fork dir merely embedding the canonical fragment fails', () {
+    // contains() was satisfiable by any path that EMBEDS the fragment; the
+    // path must END at the canonical package, not pass through it.
+    writeFile('pubspec.yaml', pubspecWith('''
+  openhearth_design:
+    path: ../evil/ohStyle/openhearth_design-fork
+'''));
+    final findings = checkCanonicalDesignPackage(root: root);
+    expect(findings, hasLength(1));
+    expect(findings.single.message, contains('vendored fork'));
+    expect(
+      findings.single.message,
+      contains('../evil/ohStyle/openhearth_design-fork'),
+    );
+  });
+
+  test('a nested copy under the canonical-looking suffix fails', () {
+    writeFile('pubspec.yaml', pubspecWith('''
+  openhearth_design:
+    path: vendor/ohStyle/openhearth_design/fork
+'''));
+    expect(checkCanonicalDesignPackage(root: root), hasLength(1));
+  });
+
+  test('a parent dir merely ending in ohStyle is not canonical', () {
+    // 'notohStyle/openhearth_design' string-ends-with the fragment; the
+    // segment boundary must be respected.
+    writeFile('pubspec.yaml', pubspecWith('''
+  openhearth_design:
+    path: ../notohStyle/openhearth_design
+'''));
+    expect(checkCanonicalDesignPackage(root: root), hasLength(1));
+  });
+
+  test('a trailing slash on the canonical path still conforms', () {
+    writeFile('pubspec.yaml', pubspecWith('''
+  openhearth_design:
+    path: ../../ohStyle/openhearth_design/
+'''));
+    expect(checkCanonicalDesignPackage(root: root), isEmpty);
+  });
+
   test('a fork in dependency_overrides fails even with a clean dependency',
       () {
     // firstMatch-only parsing examined the dependencies entry and never the

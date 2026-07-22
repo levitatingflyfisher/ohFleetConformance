@@ -106,7 +106,7 @@ List<ConformanceFinding> _designDepOccurrenceFindings(
       ),
     ];
   }
-  if (!path.contains(_canonicalPathFragment)) {
+  if (!_isCanonicalDesignPath(path)) {
     return [
       ConformanceFinding(
         _check,
@@ -117,6 +117,24 @@ List<ConformanceFinding> _designDepOccurrenceFindings(
     ];
   }
   return const [];
+}
+
+/// True only when [path] ENDS at the canonical package: a substring test
+/// was satisfiable by 'evil/ohStyle/openhearth_design-fork' shapes — any
+/// fork directory that merely embeds the fragment must fail. The suffix
+/// must also start on a path-segment boundary ('notohStyle/…' is not
+/// 'ohStyle/…').
+bool _isCanonicalDesignPath(String path) {
+  var normalized = path.replaceAll(r'\', '/').replaceAll(RegExp('/+'), '/');
+  while (normalized.endsWith('/')) {
+    normalized = normalized.substring(0, normalized.length - 1);
+  }
+  while (normalized.endsWith('/.')) {
+    normalized = normalized.substring(0, normalized.length - 2);
+  }
+  if (!normalized.endsWith(_canonicalPathFragment)) return false;
+  final start = normalized.length - _canonicalPathFragment.length;
+  return start == 0 || normalized[start - 1] == '/';
 }
 
 /// Every `Color(0xAARRGGBB)` value exported by the canonical design
