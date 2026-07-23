@@ -39,6 +39,13 @@ class FleetAppConfig {
   /// zero-permission claim, enforced.
   final Set<String> androidPermissions;
 
+  /// C4 v2 — the MERGED-manifest surface (source permissions PLUS what
+  /// plugins and the manifest merge inject, e.g. WAKE_LOCK from
+  /// notifications or the per-app DYNAMIC_RECEIVER_NOT_EXPORTED synthetic).
+  /// Null = not yet recorded, merged check off; the comparison only bites
+  /// when an APK build has left a merged manifest under build/.
+  final Set<String>? mergedAndroidPermissions;
+
   /// C2 — true only for apps whose restore is upsert-merge (StillLife):
   /// they must override the package's destructive confirm copy.
   final bool mergeSemanticsRestore;
@@ -67,6 +74,7 @@ class FleetAppConfig {
     required this.appId,
     required this.styleTier,
     required this.androidPermissions,
+    this.mergedAndroidPermissions,
     this.mergeSemanticsRestore = false,
     this.expectStartupMaintenance = true,
     this.analysisOptionsOverrideRecorded = false,
@@ -104,6 +112,7 @@ Map<FleetCheck, List<ConformanceFinding>> collectFleetFindings(
         FleetCheck.c4Permissions => checkAndroidPermissions(
             root: root,
             allowlist: config.androidPermissions,
+            mergedAllowlist: config.mergedAndroidPermissions,
           ),
         FleetCheck.c6Harness => checkHarnessCanon(
             root: root,

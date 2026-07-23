@@ -133,4 +133,94 @@ ${permissions.map((p) => '    <uses-permission android:name="$p" />').join('\n')
       isEmpty,
     );
   });
+
+  group('merged-manifest deepening (C4 v2)', () {
+    const wakeLock = 'android.permission.WAKE_LOCK';
+    const networkState = 'android.permission.ACCESS_NETWORK_STATE';
+
+    void writeMergedManifest(List<String> permissions,
+        {String abi = 'arm64-v8a'}) {
+      final file = File(
+        '${root.path}/build/app/intermediates/merged_manifests/release/'
+        'processReleaseManifest/$abi/AndroidManifest.xml',
+      );
+      file.createSync(recursive: true);
+      file.writeAsStringSync(manifestWith(permissions));
+    }
+
+    test('a plugin-injected permission not in the merged allowlist is a finding',
+        () {
+      writeManifest(manifestWith([notifications]));
+      writeMergedManifest([notifications, wakeLock, internet]);
+      final findings = checkAndroidPermissions(
+        root: root,
+        allowlist: {notifications},
+        mergedAllowlist: {notifications, wakeLock},
+      );
+      expect(findings, hasLength(1));
+      expect(findings.single.message, contains(internet));
+      expect(findings.single.message, contains('merged'));
+    });
+
+    test('an allowlisted merged permission that disappeared is a finding', () {
+      writeManifest(manifestWith([notifications]));
+      writeMergedManifest([notifications, wakeLock]);
+      final findings = checkAndroidPermissions(
+        root: root,
+        allowlist: {notifications},
+        mergedAllowlist: {notifications, wakeLock, networkState},
+      );
+      expect(findings, hasLength(1));
+      expect(findings.single.message, contains(networkState));
+    });
+
+    test('a matching merged surface yields no findings', () {
+      writeManifest(manifestWith([notifications]));
+      writeMergedManifest([notifications, wakeLock, networkState]);
+      expect(
+        checkAndroidPermissions(
+          root: root,
+          allowlist: {notifications},
+          mergedAllowlist: {notifications, wakeLock, networkState},
+        ),
+        isEmpty,
+      );
+    });
+
+    test('every ABI variant found on disk is checked', () {
+      writeManifest(manifestWith([notifications]));
+      writeMergedManifest([notifications]);
+      writeMergedManifest([notifications, internet], abi: 'armeabi-v7a');
+      final findings = checkAndroidPermissions(
+        root: root,
+        allowlist: {notifications},
+        mergedAllowlist: {notifications},
+      );
+      expect(findings, hasLength(1));
+      expect(findings.single.message, contains(internet));
+    });
+
+    test('no merged artifact on disk skips the merged comparison — a plain '
+        'flutter test run without a build must pass', () {
+      writeManifest(manifestWith([notifications]));
+      expect(
+        checkAndroidPermissions(
+          root: root,
+          allowlist: {notifications},
+          mergedAllowlist: {notifications, wakeLock},
+        ),
+        isEmpty,
+      );
+    });
+
+    test('a null merged allowlist keeps the merged check off even when the '
+        'artifact exists — apps opt in by recording their surface', () {
+      writeManifest(manifestWith([notifications]));
+      writeMergedManifest([notifications, wakeLock, internet]);
+      expect(
+        checkAndroidPermissions(root: root, allowlist: {notifications}),
+        isEmpty,
+      );
+    });
+  });
 }
