@@ -200,6 +200,28 @@ ${permissions.map((p) => '    <uses-permission android:name="$p" />').join('\n')
       expect(findings.single.message, contains(internet));
     });
 
+    test('stale debug merged manifests are ignored — only release variants '
+        'are the shipped surface', () {
+      writeManifest(manifestWith([notifications]));
+      writeMergedManifest([notifications, wakeLock]);
+      // An April-era debug artifact with a rogue permission and an old
+      // package id must not poison the check.
+      final stale = File(
+        '${root.path}/build/app/intermediates/merged_manifests/debug/'
+        'processDebugManifest/AndroidManifest.xml',
+      );
+      stale.createSync(recursive: true);
+      stale.writeAsStringSync(manifestWith([notifications, internet]));
+      expect(
+        checkAndroidPermissions(
+          root: root,
+          allowlist: {notifications},
+          mergedAllowlist: {notifications, wakeLock},
+        ),
+        isEmpty,
+      );
+    });
+
     test('no merged artifact on disk skips the merged comparison — a plain '
         'flutter test run without a build must pass', () {
       writeManifest(manifestWith([notifications]));

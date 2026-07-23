@@ -68,8 +68,12 @@ List<ConformanceFinding> _mergedManifestFindings({
   required Set<String> allowlist,
 }) {
   const check = 'C4-permissions';
-  final mergedRoot =
-      Directory('${root.path}/build/app/intermediates/merged_manifests');
+  // Only release variants: debug/profile merged manifests are dev
+  // scaffolding (and often stale, e.g. left over from before an
+  // applicationId change) — the release surface is what ships.
+  final mergedRoot = Directory(
+    '${root.path}/build/app/intermediates/merged_manifests/release',
+  );
   // Absent build artifacts are not findings (C3's law): the comparison
   // bites only when a build has produced a merged manifest.
   if (!mergedRoot.existsSync()) return const [];
