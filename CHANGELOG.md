@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.1
+
+- **C4**: a `<uses-permission … tools:node="remove"/>` element is a
+  merge-time STRIP of a plugin-injected permission, not a declaration —
+  the source-manifest check no longer counts it (the Peckish scenario:
+  the camera plugin injects RECORD_AUDIO, the app strips it; C4 was
+  flagging the strip itself). The strip's real effect stays verified by
+  the merged-manifest comparison.
+
+## 0.3.0
+
+(Section written retroactively in 0.3.1.)
+
+- **C4 v2 — the merged-manifest surface**: apps can record
+  `mergedAndroidPermissions` (source permissions plus what plugins and
+  the manifest merge inject); when a release merged manifest exists
+  under build/, every ABI variant is compared both directions.
+- **C3 in CI** fleet-wide support.
+
 ## 0.2.1
 
 - **C2 backup**: the serializer-declaration anchor is logical-line, not

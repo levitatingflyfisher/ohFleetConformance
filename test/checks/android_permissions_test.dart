@@ -104,6 +104,25 @@ ${permissions.map((p) => '    <uses-permission android:name="$p" />').join('\n')
     );
   });
 
+  test('a tools:node="remove" strip is not a declaration', () {
+    // The Peckish scenario: the camera plugin injects RECORD_AUDIO into the
+    // merged manifest, and the app strips it at merge time. The strip
+    // element names the permission but DECLARES the opposite of it.
+    writeManifest('''
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="$notifications" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO"
+        tools:node="remove"/>
+    <application android:label="fixture"></application>
+</manifest>
+''');
+    expect(
+      checkAndroidPermissions(root: root, allowlist: {notifications}),
+      isEmpty,
+    );
+  });
+
   test('a multi-line comment hiding a uses-permission is not declared', () {
     writeManifest('''
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">

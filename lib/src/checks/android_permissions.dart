@@ -116,12 +116,30 @@ List<ConformanceFinding> _mergedManifestFindings({
 /// is not a declared permission.
 final _xmlCommentPattern = RegExp(r'<!--.*?-->', dotAll: true);
 
+/// Whole `<uses-permission …>` elements, so per-element attributes can be
+/// inspected together.
+final _usesPermissionElement = RegExp(r'<uses-permission\b[^>]*>');
+
 /// `android:name` in single OR double quotes — both are valid XML.
-final _usesPermissionPattern = RegExp(
-  '<uses-permission[^>]*android:name\\s*=\\s*(?:"([^"]+)"|\'([^\']+)\')',
+final _namePattern = RegExp(
+  'android:name\\s*=\\s*(?:"([^"]+)"|\'([^\']+)\')',
 );
 
-Set<String> _usesPermissions(String manifestXml) => _usesPermissionPattern
-    .allMatches(manifestXml.replaceAll(_xmlCommentPattern, ''))
-    .map((m) => (m.group(1) ?? m.group(2))!)
-    .toSet();
+/// `tools:node="remove"` marks a merge-time STRIP of a plugin-injected
+/// permission — the opposite of declaring it (the Peckish/RECORD_AUDIO
+/// scenario). The strip's effect shows up in the merged-manifest check.
+final _removeDirective = RegExp(
+  'tools:node\\s*=\\s*(?:"remove"|\'remove\')',
+);
+
+Set<String> _usesPermissions(String manifestXml) {
+  final visible = manifestXml.replaceAll(_xmlCommentPattern, '');
+  final out = <String>{};
+  for (final element in _usesPermissionElement.allMatches(visible)) {
+    final tag = element.group(0)!;
+    if (_removeDirective.hasMatch(tag)) continue;
+    final name = _namePattern.firstMatch(tag);
+    if (name != null) out.add((name.group(1) ?? name.group(2))!);
+  }
+  return out;
+}
