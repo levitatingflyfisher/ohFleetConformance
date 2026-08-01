@@ -7,6 +7,7 @@ import 'checks/backup.dart';
 import 'checks/budgets.dart';
 import 'checks/fonts.dart';
 import 'checks/harness.dart';
+import 'checks/icon_buttons.dart';
 import 'checks/style.dart';
 import 'findings.dart';
 
@@ -29,7 +30,24 @@ enum StyleTier { full, tokens }
 /// app that bundles its own type, and switching it on by default would
 /// turn it on for every consumer the moment this package changes. Apps opt
 /// in; the default flips once they all have.
-enum FleetCheck { c1Style, c2Backup, c3Budgets, c4Permissions, c6Harness, c7Fonts }
+///
+/// C8 is deliberately OUTSIDE the default set too, for the same reason: it
+/// only bites once an app has adopted `OhIconButton` as the fix, and
+/// enabling it fleet-wide the moment this package changed would flag every
+/// app still on the bare constructor rather than the ones that have moved.
+/// It has no dedicated combined set (contrast [FleetAppConfig.withBundledFonts]):
+/// every app that currently has the bug already carries C7, so an app
+/// opting in adds `FleetCheck.c8IconButtons` straight to its own `checks:`
+/// set alongside whatever else it already runs.
+enum FleetCheck {
+  c1Style,
+  c2Backup,
+  c3Budgets,
+  c4Permissions,
+  c6Harness,
+  c7Fonts,
+  c8IconButtons,
+}
 
 /// One app's recorded standardization posture.
 ///
@@ -138,6 +156,7 @@ Map<FleetCheck, List<ConformanceFinding>> collectFleetFindings(
             requiredCiFlutterVersion: config.requiredCiFlutterVersion,
           ),
         FleetCheck.c7Fonts => checkFontCoverage(root: root),
+        FleetCheck.c8IconButtons => checkNoBareIconButtonVariants(root: root),
       },
     );
   }
@@ -171,6 +190,7 @@ String _checkLabel(FleetCheck check) => switch (check) {
       FleetCheck.c4Permissions => 'C4-permissions',
       FleetCheck.c6Harness => 'C6-harness',
       FleetCheck.c7Fonts => 'C7-fonts',
+      FleetCheck.c8IconButtons => 'C8-iconButtons',
     };
 
 List<ConformanceFinding> _styleFindings(FleetAppConfig config, Directory root) {

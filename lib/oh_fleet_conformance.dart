@@ -12,6 +12,7 @@ export 'src/checks/backup.dart';
 export 'src/checks/budgets.dart';
 export 'src/checks/fonts.dart';
 export 'src/checks/harness.dart';
+export 'src/checks/icon_buttons.dart';
 export 'src/checks/style.dart';
 export 'src/findings.dart';
 export 'src/fleet_conformance.dart';

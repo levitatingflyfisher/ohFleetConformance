@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.7.0
+
+- **C8 (new)**: no bare `IconButton.filled(`/`IconButton.filledTonal(` in an
+  app that depends on `openhearth_design`. ohStyle's `OhTheme` sets an
+  app-wide `iconTheme` color of `primary`; in Flutter 3.38.7 that ambient
+  color is injected above `IconButton`'s own variant defaults, so a bare
+  `IconButton.filled` paints its glyph the same color as its own fill —
+  invisible, tappable, and reported by a device tester as "blank circles".
+  `IconButton.filledTonal` collides the same way with poor contrast instead
+  of invisibility. `OhIconButton.filled`/`OhIconButton.filledTonal` pin the
+  correct foreground; C8 is the guard that stops the next
+  `IconButton.filled(` from reopening the collision under a green suite.
+  Confirmed against the fleet's own trees: Furrow (1 site), Peckish (1),
+  StillLife (4), PrimingTrellis (2) — all real, none fixed by this check
+  itself.
+
+  Scans `lib/` only — a regression test proving the collision exists must
+  be free to construct a bare `IconButton.filled` — and is gated on the
+  app's pubspec actually depending on `openhearth_design`; an app with a
+  different theme has no collision to flag.
+
+  C8 ships OUTSIDE the default check set, exactly like C7: it only bites
+  once an app has adopted `OhIconButton`, so defaulting it on would flag
+  every app still on the bare constructor. There is no dedicated combined
+  set — every app that currently has the bug already carries C7 (via
+  `withBundledFonts` or its own `checks:` literal), so an app opts in by
+  adding `FleetCheck.c8IconButtons` to whatever set it already runs.
+
 ## 0.6.2
 
 - **C4 v2**: merged-manifest discovery now reads both AGP layouts —

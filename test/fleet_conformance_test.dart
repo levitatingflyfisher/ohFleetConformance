@@ -56,10 +56,12 @@ void main() {
   runStartupMaintenance();
 }
 ''');
-  write('budgets.json', jsonEncode({
-    'main_dart_js_gz_max_bytes': 1400000,
-    'apk_arm64_max_bytes': 26000000,
-  }));
+  write(
+      'budgets.json',
+      jsonEncode({
+        'main_dart_js_gz_max_bytes': 1400000,
+        'apk_arm64_max_bytes': 26000000,
+      }));
   write('android/app/src/main/AndroidManifest.xml', '''
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -122,11 +124,37 @@ void main() {
       expect(results.keys.toSet(), {FleetCheck.c4Permissions});
     });
 
+    test(
+        'c8IconButtons is wired to the icon-button check, not silently to '
+        'a different one', () {
+      // A wrong entry in the switch would still compile and could still
+      // report SOMETHING for this key — checking only "is not empty" would
+      // pass even if c8IconButtons had been pointed at, say, C7's fonts
+      // check. The label and the message content both belong to the icon
+      // button check specifically, so a mis-wire fails here on both.
+      File('${app.path}/lib/theme.dart').writeAsStringSync(
+          'final x = IconButton.filled(onPressed: (){}, icon: const Icon(0));\n');
+      final results = collectFleetFindings(
+        const FleetAppConfig(
+          appId: 'fixture',
+          styleTier: StyleTier.tokens,
+          androidPermissions: {'android.permission.POST_NOTIFICATIONS'},
+          checks: {FleetCheck.c8IconButtons},
+        ),
+        root: app,
+      );
+      expect(results.keys.toSet(), {FleetCheck.c8IconButtons});
+      final findings = results[FleetCheck.c8IconButtons]!;
+      expect(findings, hasLength(1));
+      expect(findings.single.check, 'C8-iconButtons');
+      expect(findings.single.message, contains('IconButton.filled('));
+    });
+
     test('violations land under their own check keys', () {
       // Retype a canonical token in app code + sneak INTERNET into the
       // manifest: C1 and C4 must each report, independently.
-      File('${app.path}/lib/theme.dart').writeAsStringSync(
-          'const kAccent = Color(0xFFA85040);\n');
+      File('${app.path}/lib/theme.dart')
+          .writeAsStringSync('const kAccent = Color(0xFFA85040);\n');
       File('${app.path}/android/app/src/main/AndroidManifest.xml')
           .writeAsStringSync('''
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -142,8 +170,8 @@ void main() {
     });
 
     test('allowedTokenLiterals suppresses the C1 retype finding', () {
-      File('${app.path}/lib/theme.dart').writeAsStringSync(
-          'const kSignature = Color(0xFF5E9478);\n');
+      File('${app.path}/lib/theme.dart')
+          .writeAsStringSync('const kSignature = Color(0xFF5E9478);\n');
       final results = collectFleetFindings(
         const FleetAppConfig(
           appId: 'fixture',
