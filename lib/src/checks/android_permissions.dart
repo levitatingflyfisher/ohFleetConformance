@@ -60,6 +60,12 @@ List<ConformanceFinding> checkAndroidPermissions({
       _mergedManifestFindings(root: root, allowlist: mergedAllowlist),
     );
   }
+
+  // A store listing is a promise made to someone who cannot read the
+  // manifest. Eight apps tell F-Droid they ask for no network permission
+  // at all; that sentence has to be falsifiable or it is marketing.
+  findings.addAll(_listingClaimsMatchManifest(root));
+
   return findings;
 }
 
@@ -70,24 +76,27 @@ List<ConformanceFinding> _mergedManifestFindings({
   const check = 'C4-permissions';
   // Only release variants: debug/profile merged manifests are dev
   // scaffolding (and often stale, e.g. left over from before an
-  // applicationId change) — the release surface is what ships.
-  final mergedRoot = Directory(
-    '${root.path}/build/app/intermediates/merged_manifests/release',
-  );
+  // applicationId change) — the release surface is what ships. AGP has
+  // used both a plural and a singular directory name across versions;
+  // a check blind to either would silently skip the whole comparison
+  // on half the fleet's toolchains.
+  final mergedRoots = [
+    Directory('${root.path}/build/app/intermediates/merged_manifests/release'),
+    Directory('${root.path}/build/app/intermediates/merged_manifest/release'),
+  ].where((d) => d.existsSync()).toList();
   // Absent build artifacts are not findings (C3's law): the comparison
   // bites only when a build has produced a merged manifest.
-  if (!mergedRoot.existsSync()) return const [];
+  if (mergedRoots.isEmpty) return const [];
 
-  final manifests = mergedRoot
-      .listSync(recursive: true)
-      .whereType<File>()
-      .where((f) => f.path.endsWith('AndroidManifest.xml'))
-      .toList()
-    ..sort((a, b) => a.path.compareTo(b.path));
+  final manifests = <(Directory, File)>[
+    for (final mergedRoot in mergedRoots)
+      for (final f in mergedRoot.listSync(recursive: true).whereType<File>())
+        if (f.path.endsWith('AndroidManifest.xml')) (mergedRoot, f),
+  ]..sort((a, b) => a.$2.path.compareTo(b.$2.path));
   if (manifests.isEmpty) return const [];
 
   final findings = <ConformanceFinding>[];
-  for (final manifest in manifests) {
+  for (final (mergedRoot, manifest) in manifests) {
     final variant = manifest.path
         .substring(mergedRoot.path.length + 1)
         .replaceAll('/AndroidManifest.xml', '');
@@ -109,7 +118,41 @@ List<ConformanceFinding> _mergedManifestFindings({
       ));
     }
   }
+
   return findings;
+}
+
+/// Findings where the published description claims a privacy property the
+/// manifest contradicts.
+///
+/// Only the network claim is checked, because it is the one the fleet
+/// actually makes and the one a reader most relies on. No listing is not a
+/// finding — most apps have none.
+List<ConformanceFinding> _listingClaimsMatchManifest(Directory root) {
+  const check = 'C4-permissions';
+  final listing = File('${root.path}/fastlane/metadata/android/en-US/'
+      'full_description.txt');
+  if (!listing.existsSync()) return const [];
+  if (!listing.readAsStringSync().contains('no network permission')) {
+    return const [];
+  }
+
+  final manifest =
+      File('${root.path}/android/app/src/main/AndroidManifest.xml');
+  if (!manifest.existsSync()) return const [];
+  if (!manifest.readAsStringSync().contains('android.permission.INTERNET')) {
+    return const [];
+  }
+
+  return [
+    const ConformanceFinding(
+      check,
+      'the store listing claims this app asks for no network permission, '
+      'but the source manifest declares android.permission.INTERNET — fix '
+      'whichever one is wrong, because a stranger reading the listing '
+      'cannot check it',
+    ),
+  ];
 }
 
 /// `<!-- ... -->`, including multi-line bodies: a commented-out permission

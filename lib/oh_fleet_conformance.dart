@@ -10,6 +10,7 @@ export 'src/canonical_templates.dart';
 export 'src/checks/android_permissions.dart';
 export 'src/checks/backup.dart';
 export 'src/checks/budgets.dart';
+export 'src/checks/fonts.dart';
 export 'src/checks/harness.dart';
 export 'src/checks/style.dart';
 export 'src/findings.dart';

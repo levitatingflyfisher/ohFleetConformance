@@ -40,11 +40,85 @@ jobs:
     write('test/flutter_test_config.dart', canonicalFlutterTestConfig);
     write('analysis_options.yaml', canonicalAnalysisOptions);
     write('.github/workflows/ci.yml', workflowPinned("'3.38.7'"));
+    write('.gitignore', 'build/\n*.g.dart\n');
   }
 
   test('conformant fixture yields no findings', () {
     writeConformant();
     expect(checkHarnessCanon(root: root), isEmpty);
+  });
+
+  group('generated sources stay generated', () {
+    // CI and every local build run build_runner, so a committed .g.dart is
+    // only a copy that can drift from its source. Three apps had drifted
+    // this way (StillLife 14 files, Lullaby 8, Reckon 1) while the rest of
+    // the fleet ignored them — the same silent divergence C7 was hoisted
+    // to stop, one directory over.
+    test('an app that ignores *.g.dart is conformant', () {
+      writeConformant();
+      write('.gitignore', 'build/\n*.g.dart\n');
+      expect(checkHarnessCanon(root: root), isEmpty);
+    });
+
+    test('a .gitignore with no *.g.dart rule is a finding', () {
+      writeConformant();
+      write('pubspec.yaml', 'name: fixture\ndev_dependencies:\n  build_runner: ^2.4.15\n');
+      write('.gitignore', 'build/\n.dart_tool/\n');
+      final findings = checkHarnessCanon(root: root);
+      expect(findings, isNotEmpty);
+      expect(findings.map((f) => f.message).join(), contains('*.g.dart'));
+    });
+
+    test('an app with no codegen is not asked to ignore codegen', () {
+      // Trellis and PunctumTemporis have no build_runner at all. Demanding
+      // the rule there would be a rule about nothing, and rules about
+      // nothing are how a conformance suite loses its authority.
+      writeConformant();
+      write('.gitignore', 'build/\n');
+      write('pubspec.yaml', 'name: fixture\ndev_dependencies:\n  flutter_lints: ^6.0.0\n');
+      expect(checkHarnessCanon(root: root), isEmpty);
+    });
+
+    test('an app that DOES run build_runner must ignore its output', () {
+      writeConformant();
+      write('.gitignore', 'build/\n');
+      write('pubspec.yaml', 'name: fixture\ndev_dependencies:\n  build_runner: ^2.4.15\n');
+      final findings = checkHarnessCanon(root: root);
+      expect(findings, isNotEmpty);
+      expect(findings.map((f) => f.message).join(), contains('*.g.dart'));
+    });
+
+    test('the rule existing is not the same as the rule being in effect',
+        () {
+      // Lilt and Mantle had the .gitignore rule AND still tracked their
+      // generated files: gitignore only governs UNtracked paths, so adding
+      // it changed nothing that was already committed. C6 passed them both,
+      // which made this check a rule about a rule.
+      writeConformant();
+      write('pubspec.yaml',
+          'name: fixture\ndev_dependencies:\n  build_runner: ^2.4.15\n');
+      write('.gitignore', 'build/\n*.g.dart\n');
+      write('lib/model.g.dart', '// generated');
+
+      final git = ['init', '-q', '-b', 'main'];
+      Process.runSync('git', git, workingDirectory: root.path);
+      // -f because the file is ignored; that is precisely how it happens.
+      Process.runSync('git', ['add', '-f', 'lib/model.g.dart'],
+          workingDirectory: root.path);
+
+      final findings = checkHarnessCanon(root: root);
+      expect(findings, isNotEmpty);
+      expect(findings.map((f) => f.message).join(), contains('tracked'));
+    });
+
+    test('a missing .gitignore is a finding, not a free pass', () {
+      writeConformant();
+      write('pubspec.yaml', 'name: fixture\ndev_dependencies:\n  build_runner: ^2.4.15\n');
+      File('${root.path}/.gitignore').deleteSync();
+      final findings = checkHarnessCanon(root: root);
+      expect(findings, isNotEmpty);
+      expect(findings.map((f) => f.message).join(), contains('.gitignore'));
+    });
   });
 
   test('the embedded test config really is the FontManifest-aware variant',
@@ -243,5 +317,47 @@ jobs:
       # - uses: subosito/flutter-action@v2
 ''');
     expect(checkHarnessCanon(root: root), isEmpty);
+  });
+
+  group('nested app roots', () {
+    // GitHub executes workflows ONLY from the repository root. When the
+    // Flutter app lives one level down (the PrimingTrellis/app layout),
+    // demanding .github under the app root would demand a decorative copy
+    // the runner never reads — conformance theatre. The check follows
+    // GitHub's own rule: the CI root is the nearest ancestor carrying
+    // .git; roots outside any repository (these fixtures) stay their own
+    // CI root, so every flat-layout app is judged exactly as before.
+    Directory appRoot() {
+      final app = Directory('${root.path}/app')..createSync();
+      File('${app.path}/test/flutter_test_config.dart')
+        ..createSync(recursive: true)
+        ..writeAsStringSync(canonicalFlutterTestConfig);
+      File('${app.path}/analysis_options.yaml')
+          .writeAsStringSync(canonicalAnalysisOptions);
+      File('${app.path}/.gitignore').writeAsStringSync('build/\n*.g.dart\n');
+      return app;
+    }
+
+    test('a nested app is judged by the CI at its git root', () {
+      Directory('${root.path}/.git').createSync();
+      write('.github/workflows/ci.yml', workflowPinned("'3.38.7'"));
+      expect(checkHarnessCanon(root: appRoot()), isEmpty);
+    });
+
+    test('a bad pin at the git root still fails the nested app', () {
+      Directory('${root.path}/.git').createSync();
+      write('.github/workflows/ci.yml', workflowPinned("'3.44.x'"));
+      final findings = checkHarnessCanon(root: appRoot());
+      expect(findings, hasLength(1));
+      expect(findings.single.message, contains('ci.yml'));
+      expect(findings.single.message, contains('3.44.x'));
+    });
+
+    test('a .git file (worktree checkout) also marks the CI root', () {
+      File('${root.path}/.git')
+          .writeAsStringSync('gitdir: /somewhere/else\n');
+      write('.github/workflows/ci.yml', workflowPinned("'3.38.7'"));
+      expect(checkHarnessCanon(root: appRoot()), isEmpty);
+    });
   });
 }

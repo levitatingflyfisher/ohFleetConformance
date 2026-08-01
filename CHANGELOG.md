@@ -1,5 +1,80 @@
 # Changelog
 
+## 0.6.2
+
+- **C4 v2**: merged-manifest discovery now reads both AGP layouts —
+  `merged_manifests/release` (plural, older AGP) and
+  `merged_manifest/release` (singular, AGP 8) — instead of silently
+  skipping the whole release-surface comparison on modern toolchains.
+  Found when Trellis's first release build produced the singular layout
+  and the recorded merged allowlist compared against nothing.
+
+## 0.6.1
+
+- **C6**: the CI sub-check now reads workflows from the directory GitHub
+  reads them from — the nearest ancestor carrying `.git` — instead of
+  insisting on `.github/workflows` under the app root. Every flat-layout
+  app (app root = repo root) is judged exactly as before; a nested app
+  root (the PrimingTrellis `app/` layout) is judged by the CI that
+  actually runs rather than asked to keep a decorative copy the runner
+  never reads.
+
+## 0.6.0
+
+- **C4**: a store listing may not claim more privacy than the manifest
+  delivers. If `fastlane/.../full_description.txt` says the app "asks for no
+  network permission" while the source manifest declares
+  `android.permission.INTERNET`, that is a finding. Eight apps make this
+  claim to F-Droid; a stranger reading the listing cannot check it, so the
+  suite checks it for them. Apps with no listing are unaffected.
+
+## 0.5.1
+
+- **C6**: also fail when generated files are still TRACKED by git, not just
+  when the `.gitignore` rule is missing. `.gitignore` governs untracked
+  paths only, so adding the rule leaves every already-committed file exactly
+  where it was — Lilt and Mantle sat in precisely that state, rule present,
+  check green, 14 generated files still committed between them. A rule about
+  a rule is not a guard.
+
+  Shells out to `git ls-files`; reports nothing when git is absent or the
+  directory is not a repo, since that is genuinely unknowable there.
+
+## 0.5.0
+
+- **C6**: an app that runs `build_runner` must ignore `*.g.dart`. CI and
+  every local build regenerate, so a committed generated file is a second
+  source of truth that nothing keeps honest — StillLife had 14 tracked,
+  Lullaby 8, Reckon 1, and four more apps had no rule stopping the same
+  drift. Apps with no `build_runner` are exempt: a rule about output that
+  is never produced is a rule about nothing.
+
+## 0.4.0
+
+- **C7 (new)**: the bundled-font glyph guard. An app that bundles its type
+  does not fall back to a web font, so a character outside the bundled
+  cmaps is a tofu box on someone's phone. C7 parses each declared family's
+  regular weight (format-4 cmap), intersects them, and sweeps every string
+  literal under `lib/`. Emoji are exempt (the platform's colour font draws
+  them) and so are `RegExp(` lines and anything marked `// not-rendered`
+  (a character class is parsed, never painted).
+
+  Written so it cannot pass by finding nothing: no declared fonts, a
+  missing font file, an implausibly small cmap, and an empty `lib/` are
+  all findings rather than silent empties.
+
+  `FleetAppConfig.defaultChecks` and `FleetAppConfig.withBundledFonts` name
+  the two sets, so opting in is one line per app rather than eleven copies
+  of a six-element literal.
+
+  C7 ships OUTSIDE the default check set — it only applies to apps that
+  bundle type, and defaulting it on would enable it for every consumer
+  the moment this package changed. Apps opt in via `checks:`.
+
+  `bundledFontCoverage` and `undrawableIn` are exported so an app can
+  assert the same way about strings the sweep cannot see (an enum's
+  label, a generated month table).
+
 ## 0.3.1
 
 - **C4**: a `<uses-permission … tools:node="remove"/>` element is a
