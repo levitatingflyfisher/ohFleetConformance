@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'checks/android_permissions.dart';
 import 'checks/backup.dart';
 import 'checks/budgets.dart';
+import 'checks/fonts.dart';
 import 'checks/harness.dart';
 import 'checks/style.dart';
 import 'findings.dart';
@@ -23,7 +24,12 @@ enum StyleTier { full, tokens }
 /// not yet the style grammar enables c2 without c1); the campaign's ship
 /// gate is every app on the full set. C5 (the 320dp sweep) is a helper
 /// template, not a config-driven check — see `runA11ySweep`.
-enum FleetCheck { c1Style, c2Backup, c3Budgets, c4Permissions, c6Harness }
+///
+/// C7 is deliberately OUTSIDE the default set: it only makes sense for an
+/// app that bundles its own type, and switching it on by default would
+/// turn it on for every consumer the moment this package changes. Apps opt
+/// in; the default flips once they all have.
+enum FleetCheck { c1Style, c2Backup, c3Budgets, c4Permissions, c6Harness, c7Fonts }
 
 /// One app's recorded standardization posture.
 ///
@@ -74,6 +80,19 @@ class FleetAppConfig {
 
   final Set<FleetCheck> checks;
 
+  /// What every app runs. C7 is absent on purpose — see [FleetCheck].
+  static const defaultChecks = {
+    FleetCheck.c1Style,
+    FleetCheck.c2Backup,
+    FleetCheck.c3Budgets,
+    FleetCheck.c4Permissions,
+    FleetCheck.c6Harness,
+  };
+
+  /// [defaultChecks] plus the bundled-font guard — the set for any app that
+  /// ships its own type and therefore has no web-font fallback to save it.
+  static const withBundledFonts = {...defaultChecks, FleetCheck.c7Fonts};
+
   const FleetAppConfig({
     required this.appId,
     required this.styleTier,
@@ -85,13 +104,7 @@ class FleetAppConfig {
     this.allowedTokenLiterals = const {},
     this.designPackagePath = '../ohStyle/openhearth_design',
     this.requiredCiFlutterVersion = '3.38.7',
-    this.checks = const {
-      FleetCheck.c1Style,
-      FleetCheck.c2Backup,
-      FleetCheck.c3Budgets,
-      FleetCheck.c4Permissions,
-      FleetCheck.c6Harness,
-    },
+    this.checks = defaultChecks,
   });
 }
 
@@ -124,6 +137,7 @@ Map<FleetCheck, List<ConformanceFinding>> collectFleetFindings(
                 config.analysisOptionsOverrideRecorded,
             requiredCiFlutterVersion: config.requiredCiFlutterVersion,
           ),
+        FleetCheck.c7Fonts => checkFontCoverage(root: root),
       },
     );
   }
@@ -156,6 +170,7 @@ String _checkLabel(FleetCheck check) => switch (check) {
       FleetCheck.c3Budgets => 'C3-budgets',
       FleetCheck.c4Permissions => 'C4-permissions',
       FleetCheck.c6Harness => 'C6-harness',
+      FleetCheck.c7Fonts => 'C7-fonts',
     };
 
 List<ConformanceFinding> _styleFindings(FleetAppConfig config, Directory root) {

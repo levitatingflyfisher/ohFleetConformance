@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.4.0
+
+- **C7 (new)**: the bundled-font glyph guard. An app that bundles its type
+  does not fall back to a web font, so a character outside the bundled
+  cmaps is a tofu box on someone's phone. C7 parses each declared family's
+  regular weight (format-4 cmap), intersects them, and sweeps every string
+  literal under `lib/`. Emoji are exempt (the platform's colour font draws
+  them) and so are `RegExp(` lines and anything marked `// not-rendered`
+  (a character class is parsed, never painted).
+
+  Written so it cannot pass by finding nothing: no declared fonts, a
+  missing font file, an implausibly small cmap, and an empty `lib/` are
+  all findings rather than silent empties.
+
+  `FleetAppConfig.defaultChecks` and `FleetAppConfig.withBundledFonts` name
+  the two sets, so opting in is one line per app rather than eleven copies
+  of a six-element literal.
+
+  C7 ships OUTSIDE the default check set — it only applies to apps that
+  bundle type, and defaulting it on would enable it for every consumer
+  the moment this package changed. Apps opt in via `checks:`.
+
+  `bundledFontCoverage` and `undrawableIn` are exported so an app can
+  assert the same way about strings the sweep cannot see (an enum's
+  label, a generated month table).
+
 ## 0.3.1
 
 - **C4**: a `<uses-permission … tools:node="remove"/>` element is a

@@ -97,7 +97,9 @@ void main() {
     test('conformant fixture yields every enabled check with zero findings',
         () {
       final results = collectFleetFindings(fixtureConfig, root: app);
-      expect(results.keys.toSet(), FleetCheck.values.toSet());
+      // Every ENABLED check gets an entry — not every check that exists.
+      // C7 ships outside the default set, so the two are no longer equal.
+      expect(results.keys.toSet(), fixtureConfig.checks);
       for (final entry in results.entries) {
         expect(entry.value, isEmpty,
             reason: '${entry.key}: ${entry.value.join('; ')}');
@@ -183,7 +185,9 @@ void main() {
       File('${app.path}/lib/garbage.dart')
           .writeAsBytesSync([0xC3, 0x28, 0xFF, 0x00]);
       final results = collectFleetFindings(fixtureConfig, root: app);
-      expect(results.keys.toSet(), FleetCheck.values.toSet());
+      // Every ENABLED check gets an entry — not every check that exists.
+      // C7 ships outside the default set, so the two are no longer equal.
+      expect(results.keys.toSet(), fixtureConfig.checks);
       expect(results[FleetCheck.c1Style], isNotEmpty); // reads lib sources
       expect(results[FleetCheck.c2Backup], isNotEmpty); // reads lib sources
       expect(results[FleetCheck.c3Budgets], isEmpty);
