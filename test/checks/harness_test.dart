@@ -88,6 +88,29 @@ jobs:
       expect(findings.map((f) => f.message).join(), contains('*.g.dart'));
     });
 
+    test('the rule existing is not the same as the rule being in effect',
+        () {
+      // Lilt and Mantle had the .gitignore rule AND still tracked their
+      // generated files: gitignore only governs UNtracked paths, so adding
+      // it changed nothing that was already committed. C6 passed them both,
+      // which made this check a rule about a rule.
+      writeConformant();
+      write('pubspec.yaml',
+          'name: fixture\ndev_dependencies:\n  build_runner: ^2.4.15\n');
+      write('.gitignore', 'build/\n*.g.dart\n');
+      write('lib/model.g.dart', '// generated');
+
+      final git = ['init', '-q', '-b', 'main'];
+      Process.runSync('git', git, workingDirectory: root.path);
+      // -f because the file is ignored; that is precisely how it happens.
+      Process.runSync('git', ['add', '-f', 'lib/model.g.dart'],
+          workingDirectory: root.path);
+
+      final findings = checkHarnessCanon(root: root);
+      expect(findings, isNotEmpty);
+      expect(findings.map((f) => f.message).join(), contains('tracked'));
+    });
+
     test('a missing .gitignore is a finding, not a free pass', () {
       writeConformant();
       write('pubspec.yaml', 'name: fixture\ndev_dependencies:\n  build_runner: ^2.4.15\n');

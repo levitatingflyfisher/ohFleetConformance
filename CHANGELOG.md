@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.1
+
+- **C6**: also fail when generated files are still TRACKED by git, not just
+  when the `.gitignore` rule is missing. `.gitignore` governs untracked
+  paths only, so adding the rule leaves every already-committed file exactly
+  where it was — Lilt and Mantle sat in precisely that state, rule present,
+  check green, 14 generated files still committed between them. A rule about
+  a rule is not a guard.
+
+  Shells out to `git ls-files`; reports nothing when git is absent or the
+  directory is not a repo, since that is genuinely unknowable there.
+
 ## 0.5.0
 
 - **C6**: an app that runs `build_runner` must ignore `*.g.dart`. CI and

@@ -160,6 +160,12 @@ List<ConformanceFinding> checkHarnessCanon({
         '`git rm --cached` what is already tracked',
       ));
     }
+
+    // The rule existing is not the rule being in effect: .gitignore only
+    // governs UNtracked paths, so adding it leaves every already-committed
+    // file exactly where it was. Two apps sat in that state with the rule
+    // in place and this check green, which made it a rule about a rule.
+    findings.addAll(_trackedGeneratedSources(root));
   }
 
   return findings;
@@ -214,4 +220,40 @@ String _unquote(String value) {
     return value.substring(1, value.length - 1);
   }
   return value;
+}
+
+/// Generated sources git is still tracking, whatever `.gitignore` says.
+///
+/// Shells out because only git knows its own index. When git is absent or
+/// the directory is not a repo we report nothing — that is genuinely
+/// unknowable here, and the `.gitignore` rule above still applies.
+List<ConformanceFinding> _trackedGeneratedSources(Directory root) {
+  final ProcessResult result;
+  try {
+    result = Process.runSync(
+      'git',
+      ['ls-files', '--', '*.g.dart'],
+      workingDirectory: root.path,
+    );
+  } on ProcessException {
+    return const [];
+  }
+  if (result.exitCode != 0) return const [];
+
+  final tracked = (result.stdout as String)
+      .split('\n')
+      .map((l) => l.trim())
+      .where((l) => l.isNotEmpty)
+      .toList();
+  if (tracked.isEmpty) return const [];
+
+  return [
+    ConformanceFinding(
+      'C6-harness',
+      '${tracked.length} generated file(s) are still tracked by git despite '
+      'the .gitignore rule (${tracked.take(3).join(', ')}'
+      '${tracked.length > 3 ? ', …' : ''}) — gitignore only governs '
+      'UNtracked paths; run `git rm --cached` on them',
+    ),
+  ];
 }
