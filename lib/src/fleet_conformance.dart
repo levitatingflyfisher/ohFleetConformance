@@ -62,8 +62,12 @@ class FleetAppConfig {
   /// coincides with a canonical token (Sundial's sage IS sage500).
   final Set<int> allowedTokenLiterals;
 
-  /// C1 — path to the canonical design package, relative to the app root
-  /// (StillLife sits outside OpenHearth/ and needs the longer hop).
+  /// C1 — path to the canonical design package, relative to the app root.
+  ///
+  /// Every app in the fleet now sits directly under `OpenHearth/`, so the
+  /// default holds and nothing overrides this. It stays configurable for the
+  /// next app that lands somewhere unusual — but an app that needs it is an
+  /// app that will quietly miss fleet-wide sweeps, so prefer moving the app.
   final String designPackagePath;
 
   final String requiredCiFlutterVersion;
