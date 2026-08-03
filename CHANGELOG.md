@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0
+
+- **C6**: an app that runs `build_runner` must ignore `*.g.dart`. CI and
+  every local build regenerate, so a committed generated file is a second
+  source of truth that nothing keeps honest — StillLife had 14 tracked,
+  Lullaby 8, Reckon 1, and four more apps had no rule stopping the same
+  drift. Apps with no `build_runner` are exempt: a rule about output that
+  is never produced is a rule about nothing.
+
 ## 0.4.0
 
 - **C7 (new)**: the bundled-font glyph guard. An app that bundles its type

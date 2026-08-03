@@ -40,11 +40,62 @@ jobs:
     write('test/flutter_test_config.dart', canonicalFlutterTestConfig);
     write('analysis_options.yaml', canonicalAnalysisOptions);
     write('.github/workflows/ci.yml', workflowPinned("'3.38.7'"));
+    write('.gitignore', 'build/\n*.g.dart\n');
   }
 
   test('conformant fixture yields no findings', () {
     writeConformant();
     expect(checkHarnessCanon(root: root), isEmpty);
+  });
+
+  group('generated sources stay generated', () {
+    // CI and every local build run build_runner, so a committed .g.dart is
+    // only a copy that can drift from its source. Three apps had drifted
+    // this way (StillLife 14 files, Lullaby 8, Reckon 1) while the rest of
+    // the fleet ignored them — the same silent divergence C7 was hoisted
+    // to stop, one directory over.
+    test('an app that ignores *.g.dart is conformant', () {
+      writeConformant();
+      write('.gitignore', 'build/\n*.g.dart\n');
+      expect(checkHarnessCanon(root: root), isEmpty);
+    });
+
+    test('a .gitignore with no *.g.dart rule is a finding', () {
+      writeConformant();
+      write('pubspec.yaml', 'name: fixture\ndev_dependencies:\n  build_runner: ^2.4.15\n');
+      write('.gitignore', 'build/\n.dart_tool/\n');
+      final findings = checkHarnessCanon(root: root);
+      expect(findings, isNotEmpty);
+      expect(findings.map((f) => f.message).join(), contains('*.g.dart'));
+    });
+
+    test('an app with no codegen is not asked to ignore codegen', () {
+      // Trellis and PunctumTemporis have no build_runner at all. Demanding
+      // the rule there would be a rule about nothing, and rules about
+      // nothing are how a conformance suite loses its authority.
+      writeConformant();
+      write('.gitignore', 'build/\n');
+      write('pubspec.yaml', 'name: fixture\ndev_dependencies:\n  flutter_lints: ^6.0.0\n');
+      expect(checkHarnessCanon(root: root), isEmpty);
+    });
+
+    test('an app that DOES run build_runner must ignore its output', () {
+      writeConformant();
+      write('.gitignore', 'build/\n');
+      write('pubspec.yaml', 'name: fixture\ndev_dependencies:\n  build_runner: ^2.4.15\n');
+      final findings = checkHarnessCanon(root: root);
+      expect(findings, isNotEmpty);
+      expect(findings.map((f) => f.message).join(), contains('*.g.dart'));
+    });
+
+    test('a missing .gitignore is a finding, not a free pass', () {
+      writeConformant();
+      write('pubspec.yaml', 'name: fixture\ndev_dependencies:\n  build_runner: ^2.4.15\n');
+      File('${root.path}/.gitignore').deleteSync();
+      final findings = checkHarnessCanon(root: root);
+      expect(findings, isNotEmpty);
+      expect(findings.map((f) => f.message).join(), contains('.gitignore'));
+    });
   });
 
   test('the embedded test config really is the FontManifest-aware variant',

@@ -25,6 +25,9 @@ class OhColors {
 }
 ''');
 
+  // Generated sources are ignored, never committed (C6).
+  write('.gitignore', 'build/\n*.g.dart\n');
+
   write('pubspec.yaml', '''
 name: fixture_app
 dependencies:
