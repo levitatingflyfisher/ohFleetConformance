@@ -264,4 +264,62 @@ ${permissions.map((p) => '    <uses-permission android:name="$p" />').join('\n')
       );
     });
   });
+
+  group('a store listing may not claim more privacy than the manifest', () {
+    // The listing is a promise made to a stranger who cannot read the
+    // manifest. Eight apps say "asks for no network permission" in their
+    // F-Droid description; that sentence has to be false-able, or it is
+    // marketing rather than a fact.
+    void listing(String text) {
+      final f = File('${root.path}/fastlane/metadata/android/en-US/'
+          'full_description.txt');
+      f.parent.createSync(recursive: true);
+      f.writeAsStringSync(text);
+    }
+
+    test('the claim is fine when the manifest really declares nothing', () {
+      writeManifest(manifestWith(const []));
+      listing('Everything stays here. The APK asks for no network '
+          'permission at all.');
+      expect(
+        checkAndroidPermissions(root: root, allowlist: const {}),
+        isEmpty,
+      );
+    });
+
+    test('claiming no network while declaring INTERNET is a finding', () {
+      writeManifest(manifestWith(const [internet]));
+      listing('The APK asks for no network permission at all.');
+      final findings = checkAndroidPermissions(
+        root: root,
+        allowlist: const {'android.permission.INTERNET'},
+      );
+      expect(findings, isNotEmpty);
+      expect(findings.map((f) => f.message).join(),
+          contains('no network permission'));
+    });
+
+    test('an app that makes no such claim is not asked to justify one', () {
+      writeManifest(manifestWith(const [internet]));
+      listing('Fetches the forecast, and shows you the request.');
+      expect(
+        checkAndroidPermissions(
+          root: root,
+          allowlist: const {'android.permission.INTERNET'},
+        ),
+        isEmpty,
+      );
+    });
+
+    test('no listing at all is not a finding — most apps have none yet', () {
+      writeManifest(manifestWith(const [internet]));
+      expect(
+        checkAndroidPermissions(
+          root: root,
+          allowlist: const {'android.permission.INTERNET'},
+        ),
+        isEmpty,
+      );
+    });
+  });
 }

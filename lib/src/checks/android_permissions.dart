@@ -60,6 +60,12 @@ List<ConformanceFinding> checkAndroidPermissions({
       _mergedManifestFindings(root: root, allowlist: mergedAllowlist),
     );
   }
+
+  // A store listing is a promise made to someone who cannot read the
+  // manifest. Eight apps tell F-Droid they ask for no network permission
+  // at all; that sentence has to be falsifiable or it is marketing.
+  findings.addAll(_listingClaimsMatchManifest(root));
+
   return findings;
 }
 
@@ -109,7 +115,41 @@ List<ConformanceFinding> _mergedManifestFindings({
       ));
     }
   }
+
   return findings;
+}
+
+/// Findings where the published description claims a privacy property the
+/// manifest contradicts.
+///
+/// Only the network claim is checked, because it is the one the fleet
+/// actually makes and the one a reader most relies on. No listing is not a
+/// finding — most apps have none.
+List<ConformanceFinding> _listingClaimsMatchManifest(Directory root) {
+  const check = 'C4-permissions';
+  final listing = File('${root.path}/fastlane/metadata/android/en-US/'
+      'full_description.txt');
+  if (!listing.existsSync()) return const [];
+  if (!listing.readAsStringSync().contains('no network permission')) {
+    return const [];
+  }
+
+  final manifest =
+      File('${root.path}/android/app/src/main/AndroidManifest.xml');
+  if (!manifest.existsSync()) return const [];
+  if (!manifest.readAsStringSync().contains('android.permission.INTERNET')) {
+    return const [];
+  }
+
+  return [
+    const ConformanceFinding(
+      check,
+      'the store listing claims this app asks for no network permission, '
+      'but the source manifest declares android.permission.INTERNET — fix '
+      'whichever one is wrong, because a stranger reading the listing '
+      'cannot check it',
+    ),
+  ];
 }
 
 /// `<!-- ... -->`, including multi-line bodies: a commented-out permission

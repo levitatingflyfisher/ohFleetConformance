@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0
+
+- **C4**: a store listing may not claim more privacy than the manifest
+  delivers. If `fastlane/.../full_description.txt` says the app "asks for no
+  network permission" while the source manifest declares
+  `android.permission.INTERNET`, that is a finding. Eight apps make this
+  claim to F-Droid; a stranger reading the listing cannot check it, so the
+  suite checks it for them. Apps with no listing are unaffected.
+
 ## 0.5.1
 
 - **C6**: also fail when generated files are still TRACKED by git, not just
