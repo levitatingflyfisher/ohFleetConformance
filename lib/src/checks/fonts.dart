@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -5,7 +6,8 @@ import '../findings.dart';
 
 const _check = 'C7-fonts';
 
-/// C7 — every character the app prints must be one its own fonts can draw.
+/// C7 — every character the app prints must be one its bundled fonts can
+/// draw: its own `fonts:` block plus `openhearth_design`'s package fonts.
 ///
 /// An app that bundles its type does NOT fall back to a web font; that is
 /// the point of bundling. So a character outside the bundled cmaps renders
@@ -28,31 +30,31 @@ const _check = 'C7-fonts';
 List<ConformanceFinding> checkFontCoverage({required Directory root}) {
   final findings = <ConformanceFinding>[];
 
-  final regulars = _regularWeightFiles(root);
-  if (regulars.isEmpty) {
+  final faces = _bundledFaces(root);
+  if (faces.isEmpty) {
     return [
       const ConformanceFinding(
         _check,
-        'no bundled font families declared in pubspec.yaml — either the '
-        'app bundles type (and this check should read it) or it renders '
-        'from the platform font (and should not enable C7)',
+        'no bundled font families declared in pubspec.yaml or in '
+        'openhearth_design\'s package fonts — either the app bundles type '
+        '(and this check should read it) or it renders from the platform '
+        'font (and should not enable C7)',
       ),
     ];
   }
 
   final coverage = <String, Set<int>>{};
-  for (final entry in regulars.entries) {
-    final file = File('${root.path}/${entry.value}');
-    if (!file.existsSync()) {
+  for (final face in faces) {
+    if (!face.file.existsSync()) {
       findings.add(ConformanceFinding(
         _check,
-        'pubspec.yaml declares ${entry.value} for family ${entry.key} but '
-        'the file is not on disk — the app would fall back to the platform '
-        'font at runtime',
+        '${face.declaredBy} declares ${face.asset} for family ${face.family} '
+        'but the file is not on disk — the app would fall back to the '
+        'platform font at runtime',
       ));
       continue;
     }
-    coverage[entry.key] = _coveredBy(file.readAsBytesSync());
+    coverage[face.family] = _coveredBy(face.file.readAsBytesSync());
   }
   if (coverage.isEmpty) return findings;
 
@@ -131,9 +133,10 @@ List<ConformanceFinding> checkFontCoverage({required Directory root}) {
 /// month name table).
 Set<int> bundledFontCoverage({required Directory root}) {
   final sets = <Set<int>>[];
-  for (final path in _regularWeightFiles(root).values) {
-    final file = File('${root.path}/$path');
-    if (file.existsSync()) sets.add(_coveredBy(file.readAsBytesSync()));
+  for (final face in _bundledFaces(root)) {
+    if (face.file.existsSync()) {
+      sets.add(_coveredBy(face.file.readAsBytesSync()));
+    }
   }
   if (sets.isEmpty) return const {};
   var out = sets.first;
@@ -164,13 +167,83 @@ String _relative(String path, Directory root) =>
 bool _isEmoji(int r) =>
     r >= 0x1F000 || r == 0x200D || (r >= 0xFE00 && r <= 0xFE0F);
 
-/// family → the asset path of its regular weight, which is what body text
-/// renders from. A family whose weights disagree would still box, but the
-/// regular is where the bug always shows first.
-Map<String, String> _regularWeightFiles(Directory root) {
-  final pubspec = File('${root.path}/pubspec.yaml');
-  if (!pubspec.existsSync()) return const {};
+/// Packages whose pubspec `fonts:` land in every dependent app's
+/// FontManifest under `packages/<name>/<Family>`. ohStyle ships Lora and
+/// Nunito this way, so an app that dropped its own copies still bundles them.
+const _fontPackages = ['openhearth_design'];
 
+/// One family's regular-weight face, wherever it is declared.
+class _Face {
+  const _Face(this.family, this.asset, this.file, this.declaredBy);
+
+  /// The name text asks for: bare for the app's own, prefixed for a
+  /// package's (`packages/openhearth_design/Lora`).
+  final String family;
+  final String asset;
+  final File file;
+  final String declaredBy;
+}
+
+/// Every bundled family's regular face: the app's own `fonts:` block plus
+/// each [_fontPackages] dependency's. Both [checkFontCoverage] and
+/// [bundledFontCoverage] read this, so they cannot disagree about what the
+/// app ships.
+List<_Face> _bundledFaces(Directory root) {
+  final faces = <_Face>[
+    for (final e in _regularWeightFiles(File('${root.path}/pubspec.yaml'))
+        .entries)
+      _Face(e.key, e.value, File('${root.path}/${e.value}'), 'pubspec.yaml'),
+  ];
+  for (final pkg in _fontPackages) {
+    final pkgRoot = _packageRoot(root, pkg);
+    if (pkgRoot == null) continue;
+    for (final e
+        in _regularWeightFiles(File('${pkgRoot.path}/pubspec.yaml')).entries) {
+      faces.add(_Face('packages/$pkg/${e.key}', e.value,
+          File('${pkgRoot.path}/${e.value}'), "$pkg's pubspec.yaml"));
+    }
+  }
+  return faces;
+}
+
+/// Where [package] lives for this app. `.dart_tool/package_config.json` is
+/// authoritative when present (it is what the build resolves); a package it
+/// does not list is not a dependency. Without it — before `pub get` — the
+/// app's own pubspec `path:` dependency is the only honest source.
+Directory? _packageRoot(Directory root, String package) {
+  final config = File('${root.path}/.dart_tool/package_config.json');
+  if (config.existsSync()) {
+    try {
+      final json = jsonDecode(config.readAsStringSync()) as Map<String, dynamic>;
+      for (final p in (json['packages'] as List).cast<Map<String, dynamic>>()) {
+        if (p['name'] != package) continue;
+        final uri = Uri.file(config.absolute.path).resolve(p['rootUri'] as String);
+        return Directory(uri.toFilePath());
+      }
+    } on FormatException {
+      return null;
+    }
+    return null;
+  }
+
+  final pubspec = File('${root.path}/pubspec.yaml');
+  if (!pubspec.existsSync()) return null;
+  final lines = pubspec.readAsLinesSync();
+  for (var i = 0; i < lines.length - 1; i++) {
+    if (!RegExp('^\\s+$package:\\s*\$').hasMatch(lines[i])) continue;
+    final path = RegExp(r'^\s+path:\s*(\S+)').firstMatch(lines[i + 1]);
+    if (path == null) return null;
+    final dir = path.group(1)!;
+    return Directory(dir.startsWith('/') ? dir : '${root.path}/$dir');
+  }
+  return null;
+}
+
+/// family → the asset path of its regular weight, which is what body text
+/// renders from, as declared in [pubspec]. A family whose weights disagree
+/// would still box, but the regular is where the bug always shows first.
+Map<String, String> _regularWeightFiles(File pubspec) {
+  if (!pubspec.existsSync()) return const {};
   final out = <String, String>{};
   String? family;
   String? asset;

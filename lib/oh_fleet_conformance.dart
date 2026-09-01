@@ -7,12 +7,17 @@ library;
 
 export 'src/a11y_sweep.dart';
 export 'src/canonical_templates.dart';
+export 'src/checks/accent_vs_error.dart';
 export 'src/checks/android_permissions.dart';
 export 'src/checks/backup.dart';
 export 'src/checks/budgets.dart';
 export 'src/checks/fonts.dart';
 export 'src/checks/harness.dart';
 export 'src/checks/icon_buttons.dart';
+export 'src/checks/icon_labels.dart';
+export 'src/checks/primary_screens.dart';
+export 'src/checks/raw_errors.dart';
+export 'src/checks/routes.dart';
 export 'src/checks/style.dart';
 export 'src/findings.dart';
 export 'src/fleet_conformance.dart';

@@ -199,6 +199,27 @@ abstract final class OhColors {
     );
   });
 
+  test('canonicalTokensByNameFrom maps each token name to its value', () {
+    writeFile('design/lib/src/colors.dart', '''
+abstract final class OhColors {
+  static const hearth500 = Color(0xFFA85040);
+  static const red500   = Color(0xff9b1d29); // aligned, lower-case
+  // static const retired = Color(0xFF123456);
+}
+''');
+    expect(
+      canonicalTokensByNameFrom(Directory('${root.path}/design')),
+      {'hearth500': hearth500, 'red500': 0xFF9B1D29},
+    );
+  });
+
+  test('canonicalTokensByNameFrom throws when colors.dart is missing', () {
+    expect(
+      () => canonicalTokensByNameFrom(Directory('${root.path}/design')),
+      throwsStateError,
+    );
+  });
+
   test('canonicalTokenValuesFrom throws when colors.dart is missing', () {
     // Fail loud: an empty token set would make the retyped-literal check
     // pass vacuously against every app.

@@ -148,19 +148,39 @@ bool _isCanonicalDesignPath(String path) {
 /// loud when the canonical package cannot be found — an empty token set
 /// would make the retyped-literal check pass vacuously against every app.
 Set<int> canonicalTokenValuesFrom(Directory designPackageRoot) {
+  // Comment-stripped: a commented-out (retired) token must not widen the
+  // canonical set and flag apps for a value that is no longer exported.
+  return _hexLiteralPattern
+      .allMatches(strippedDartSource(_canonicalColorsSource(designPackageRoot)))
+      .map((m) => int.parse(m.group(0)!.substring(2), radix: 16))
+      .toSet();
+}
+
+/// The canonical tokens by name (`hearth500` → 0xFF9E4D2C), read from the
+/// same colors.dart as [canonicalTokenValuesFrom] — for checks that must
+/// resolve a role (`urgency: OhColors.red500`) or an app's
+/// `OhColors.sage500` reference to its value. Throws [StateError] when
+/// colors.dart is missing, for the same reason.
+Map<String, int> canonicalTokensByNameFrom(Directory designPackageRoot) {
+  final source = strippedDartSource(_canonicalColorsSource(designPackageRoot));
+  return {
+    for (final m in _namedTokenPattern.allMatches(source))
+      m.group(1)!: int.parse(m.group(2)!, radix: 16),
+  };
+}
+
+final _namedTokenPattern = RegExp(
+    r'static\s+const\s+(\w+)\s*=\s*Color\(\s*0x([0-9A-Fa-f]{8})\s*\)');
+
+String _canonicalColorsSource(Directory designPackageRoot) {
   final colors = File('${designPackageRoot.path}/lib/src/colors.dart');
   if (!colors.existsSync()) {
     throw StateError(
       'canonical design package colors.dart not found at ${colors.path} — '
-      'refusing to run the retyped-token check against an empty token set',
+      'refusing to run a token check against an empty token set',
     );
   }
-  // Comment-stripped: a commented-out (retired) token must not widen the
-  // canonical set and flag apps for a value that is no longer exported.
-  return _hexLiteralPattern
-      .allMatches(strippedDartSource(colors.readAsStringSync()))
-      .map((m) => int.parse(m.group(0)!.substring(2), radix: 16))
-      .toSet();
+  return colors.readAsStringSync();
 }
 
 /// C1 — canonical token values may not be retyped as literals.

@@ -79,10 +79,16 @@ Uint8List fontCovering(List<(int, int)> ranges) {
 }
 
 void main() {
+  late Directory parent;
   late Directory root;
 
-  setUp(() => root = Directory.systemTemp.createTempSync('oh_fonts_'));
-  tearDown(() => root.deleteSync(recursive: true));
+  // The app sits beside a sibling design package, as the fleet's apps sit
+  // beside ohStyle, so relative `rootUri`s and `path:` deps are realistic.
+  setUp(() {
+    parent = Directory.systemTemp.createTempSync('oh_fonts_');
+    root = Directory('${parent.path}/app')..createSync();
+  });
+  tearDown(() => parent.deleteSync(recursive: true));
 
   /// Writes a minimal app: one `fonts:` block, the font files it names, and
   /// whatever Dart sources the test cares about.
@@ -90,8 +96,15 @@ void main() {
     required Map<String, List<(int, int)>> families,
     Map<String, String> lib = const {'main.dart': 'const a = 1;'},
     String? rawFontsBlock,
+    bool dependsOnDesign = false,
   }) {
-    final buf = StringBuffer('name: fixture\n\nflutter:\n  uses-material-design: true\n');
+    final buf = StringBuffer('name: fixture\n\n');
+    if (dependsOnDesign) {
+      buf.write('dependencies:\n'
+          '  openhearth_design:\n'
+          '    path: ../ohStyle/openhearth_design\n\n');
+    }
+    buf.write('flutter:\n  uses-material-design: true\n');
     if (rawFontsBlock != null) {
       buf.write(rawFontsBlock);
     } else if (families.isNotEmpty) {
@@ -128,6 +141,120 @@ void main() {
   /// app's date labels use), Latin Extended-A, and the general punctuation
   /// run that holds dashes and curly quotes.
   const latin = [(0x20, 0x7E), (0xA0, 0xFF), (0x100, 0x17F), (0x2010, 0x201D)];
+
+  /// Writes the sibling `openhearth_design` package: a pubspec declaring
+  /// [families] as package fonts (regular + bold each) and the files it names.
+  /// With [packageConfig], also writes the app's `.dart_tool/package_config.json`
+  /// pointing at it the way `pub get` does — relative to `.dart_tool/`.
+  void design({
+    required Map<String, List<(int, int)>> families,
+    bool packageConfig = true,
+  }) {
+    final pkg = Directory('${parent.path}/ohStyle/openhearth_design')
+      ..createSync(recursive: true);
+    final buf = StringBuffer('name: openhearth_design\n\nflutter:\n');
+    if (families.isNotEmpty) {
+      buf.write('  fonts:\n');
+      for (final f in families.entries) {
+        buf.write('    - family: ${f.key}\n      fonts:\n');
+        buf.write('        - asset: fonts/${f.key}-Regular.ttf\n');
+        buf.write('        - asset: fonts/${f.key}-Bold.ttf\n'
+            '          weight: 700\n');
+      }
+    }
+    File('${pkg.path}/pubspec.yaml').writeAsStringSync(buf.toString());
+    final fontDir = Directory('${pkg.path}/fonts')..createSync();
+    for (final f in families.entries) {
+      File('${fontDir.path}/${f.key}-Regular.ttf')
+          .writeAsBytesSync(fontCovering(f.value));
+      File('${fontDir.path}/${f.key}-Bold.ttf')
+          .writeAsBytesSync(fontCovering([(0x20, 0xFFFE)]));
+    }
+    if (packageConfig) {
+      final dt = Directory('${root.path}/.dart_tool')..createSync();
+      File('${dt.path}/package_config.json').writeAsStringSync('''
+{
+  "configVersion": 2,
+  "packages": [
+    {
+      "name": "openhearth_design",
+      "rootUri": "../../ohStyle/openhearth_design",
+      "packageUri": "lib/",
+      "languageVersion": "3.3"
+    }
+  ]
+}
+''');
+    }
+  }
+
+  group('package fonts (openhearth_design)', () {
+    test('an app with no local fonts is checked against the package fonts',
+        () {
+      app(families: const {}, dependsOnDesign: true, lib: {
+        'main.dart': "const greeting = 'Hello — café · 3';",
+      });
+      design(families: {'Lora': latin, 'Nunito': latin});
+      expect(checkFontCoverage(root: root), isEmpty);
+    });
+
+    test('a literal the package fonts cannot draw is flagged', () {
+      // Proves the characters are really checked against the package cmaps,
+      // not merely that the "no fonts" finding went away.
+      app(families: const {}, dependsOnDesign: true, lib: {
+        'targets.dart': "const mark = '≤ 2200 kcal';",
+      });
+      design(families: {'Lora': latin, 'Nunito': latin});
+      final findings = checkFontCoverage(root: root);
+      expect(findings, hasLength(1));
+      expect(findings.single.message, contains('U+2264'));
+    });
+
+    test('bundledFontCoverage includes the package families', () {
+      app(families: const {}, dependsOnDesign: true);
+      design(families: {'Lora': latin});
+      final covered = bundledFontCoverage(root: root);
+      expect(covered, contains(0x00B7));
+      expect(covered, isNot(contains(0x2264)));
+    });
+
+    test('package and app families intersect', () {
+      app(families: {'Local': latin}, dependsOnDesign: true);
+      design(families: {
+        'Lora': const [(0x20, 0x7E), (0xA0, 0xFF), (0x100, 0x17F)],
+      });
+      expect(bundledFontCoverage(root: root), isNot(contains(0x2019)),
+          reason: 'text in an OhTypography style lands in the package Lora');
+    });
+
+    test('falls back to the pubspec path dep when .dart_tool is absent', () {
+      app(families: const {}, dependsOnDesign: true, lib: {
+        'targets.dart': "const mark = '≥';",
+      });
+      design(families: {'Lora': latin}, packageConfig: false);
+      final findings = checkFontCoverage(root: root);
+      expect(findings, hasLength(1));
+      expect(findings.single.message, contains('U+2265'));
+    });
+
+    test('no app fonts and no package fonts is still a finding', () {
+      app(families: const {}, dependsOnDesign: true);
+      design(families: const {});
+      final findings = checkFontCoverage(root: root);
+      expect(findings, isNotEmpty);
+      expect(findings.first.message, contains('no bundled font'));
+    });
+
+    test('a missing package font file is a finding naming the package', () {
+      app(families: const {}, dependsOnDesign: true);
+      design(families: {'Lora': latin, 'Nunito': latin});
+      File('${parent.path}/ohStyle/openhearth_design/fonts/Lora-Regular.ttf')
+          .deleteSync();
+      final findings = checkFontCoverage(root: root);
+      expect(findings.map((f) => f.message).join(),
+          allOf(contains('openhearth_design'), contains('Lora-Regular.ttf')));
+    });
+  });
 
   group('bundledFontCoverage', () {
     test('reads exactly the ranges the cmap declares', () {

@@ -150,6 +150,184 @@ void main() {
       expect(findings.single.message, contains('IconButton.filled('));
     });
 
+    test('the 0.8.0 checks ship outside the default set', () {
+      // Every app consumes this package by path: a new check in
+      // defaultChecks would turn red everywhere the instant it landed.
+      for (final check in [
+        FleetCheck.c9Routes,
+        FleetCheck.c10RawErrors,
+        FleetCheck.c11IconLabels,
+        FleetCheck.c11StrictBarLabels,
+        FleetCheck.c12AccentVsError,
+        FleetCheck.c5PrimaryScreens,
+      ]) {
+        expect(FleetAppConfig.defaultChecks, isNot(contains(check)));
+      }
+    });
+
+    test('c9Routes is wired to the route check and receives exemptions', () {
+      File('${app.path}/lib/router.dart').writeAsStringSync('''
+final router = GoRouter(routes: [
+  GoRoute(path: '/', builder: (c, s) => const Home()),
+  GoRoute(path: '/orphan', builder: (c, s) => const Orphan()),
+]);
+''');
+      FleetAppConfig config(Map<String, String> exemptions) => FleetAppConfig(
+            appId: 'fixture',
+            styleTier: StyleTier.tokens,
+            androidPermissions: const {},
+            checks: const {FleetCheck.c9Routes},
+            routeExemptions: exemptions,
+          );
+      final findings =
+          collectFleetFindings(config(const {}), root: app)[FleetCheck.c9Routes]!;
+      expect(findings.single.check, 'C9-routes');
+      expect(findings.single.message, contains("'/orphan'"));
+      expect(
+          collectFleetFindings(config(const {'/orphan': 'deep link only'}),
+              root: app)[FleetCheck.c9Routes],
+          isEmpty);
+    });
+
+    test('c10RawErrors is wired to the raw-error check', () {
+      File('${app.path}/lib/screen.dart').writeAsStringSync(
+          "Widget f(error) => Text('Error: \$error');\n");
+      final findings = collectFleetFindings(
+        const FleetAppConfig(
+          appId: 'fixture',
+          styleTier: StyleTier.tokens,
+          androidPermissions: {},
+          checks: {FleetCheck.c10RawErrors},
+        ),
+        root: app,
+      )[FleetCheck.c10RawErrors]!;
+      expect(findings.single.check, 'C10-rawErrors');
+      expect(findings.single.message, contains('lib/screen.dart:1'));
+    });
+
+    test('c11IconLabels is wired to the app-bar label check', () {
+      File('${app.path}/lib/bar.dart').writeAsStringSync(
+          'Widget b() => AppBar(actions: [\n'
+          '  IconButton(icon: const Icon(Icons.a), onPressed: () {}),\n'
+          ']);\n');
+      final findings = collectFleetFindings(
+        const FleetAppConfig(
+          appId: 'fixture',
+          styleTier: StyleTier.tokens,
+          androidPermissions: {},
+          checks: {FleetCheck.c11IconLabels},
+        ),
+        root: app,
+      )[FleetCheck.c11IconLabels]!;
+      expect(findings.single.check, 'C11-iconLabels');
+      expect(findings.single.message, contains('lib/bar.dart:2'));
+    });
+
+    test('c11StrictBarLabels is wired to the strict label check', () {
+      File('${app.path}/lib/bar.dart').writeAsStringSync(
+          'Widget b() => AppBar(actions: [\n'
+          "  IconButton(tooltip: 'Filter', icon: const Icon(Icons.a), "
+          'onPressed: () {}),\n'
+          ']);\n');
+      FleetAppConfig config(FleetCheck check) => FleetAppConfig(
+            appId: 'fixture',
+            styleTier: StyleTier.tokens,
+            androidPermissions: const {},
+            checks: {check},
+          );
+      expect(
+          collectFleetFindings(config(FleetCheck.c11IconLabels),
+              root: app)[FleetCheck.c11IconLabels],
+          isEmpty);
+      final findings = collectFleetFindings(
+          config(FleetCheck.c11StrictBarLabels),
+          root: app)[FleetCheck.c11StrictBarLabels]!;
+      expect(findings.single.check, 'C11-strictBarLabels');
+      expect(findings.single.message, contains('lib/bar.dart:2'));
+    });
+
+    test('c11StrictBarLabels receives the bar-label exemptions', () {
+      File('${app.path}/lib/bar.dart').writeAsStringSync(
+          'Widget b() => AppBar(actions: [\n'
+          "  PopupMenuButton<int>(key: const Key('pick'), "
+          'itemBuilder: (c) => const [], child: Face()),\n'
+          ']);\n');
+      FleetAppConfig config(Map<String, String> ex) => FleetAppConfig(
+            appId: 'fixture',
+            styleTier: StyleTier.tokens,
+            androidPermissions: const {},
+            checks: const {FleetCheck.c11StrictBarLabels},
+            barLabelExemptions: ex,
+          );
+      expect(
+          collectFleetFindings(config(const {}),
+              root: app)[FleetCheck.c11StrictBarLabels],
+          hasLength(1));
+      expect(
+          collectFleetFindings(
+              config(const {'lib/bar.dart#pick': 'Face shows the word'}),
+              root: app)[FleetCheck.c11StrictBarLabels],
+          isEmpty);
+    });
+
+    test('c12AccentVsError is wired, reads the design package and the '
+        'declared accents', () {
+      // The fixture's canonical package has colors.dart but no roles:
+      // the check must say so, not pass.
+      FleetAppConfig config(List<FleetAccent> accents) => FleetAppConfig(
+            appId: 'fixture',
+            styleTier: StyleTier.tokens,
+            androidPermissions: const {},
+            checks: const {FleetCheck.c12AccentVsError},
+            accentColors: accents,
+          );
+      var findings = collectFleetFindings(config(const []),
+          root: app)[FleetCheck.c12AccentVsError]!;
+      expect(findings.single.check, 'C12-accentVsError');
+      expect(findings.single.message, contains('urgency'));
+
+      File('${parent.path}/ohStyle/openhearth_design/lib/src/colors.dart')
+          .writeAsStringSync('''
+class OhColors {
+  static const hearth500 = Color(0xFFA85040);
+  static const sage500 = Color(0xFF5E9478);
+  static const red500 = Color(0xFF9B1D29);
+}
+''');
+      File('${parent.path}/ohStyle/openhearth_design/lib/src/color_roles.dart')
+          .writeAsStringSync('''
+class OhColorRoles {
+  static const light = OhColorRoles(urgency: OhColors.red500);
+}
+''');
+      findings = collectFleetFindings(
+          config(const [FleetAccent.light(0xFFA0202C)]),
+          root: app)[FleetCheck.c12AccentVsError]!;
+      expect(findings, isNotEmpty);
+      expect(findings.first.message, contains('0xFFA0202C'));
+      expect(
+          collectFleetFindings(config(const [FleetAccent.light(0xFF3D82C9)]),
+              root: app)[FleetCheck.c12AccentVsError],
+          isEmpty);
+    });
+
+    test('c5PrimaryScreens is wired and receives the screen list', () {
+      File('${app.path}/lib/today.dart')
+          .writeAsStringSync('class TodayScreen {}\n');
+      final findings = collectFleetFindings(
+        const FleetAppConfig(
+          appId: 'fixture',
+          styleTier: StyleTier.tokens,
+          androidPermissions: {},
+          checks: {FleetCheck.c5PrimaryScreens},
+          primaryActionScreens: {'TodayScreen'},
+        ),
+        root: app,
+      )[FleetCheck.c5PrimaryScreens]!;
+      expect(findings.single.check, 'C5-primaryScreens');
+      expect(findings.single.message, contains('TodayScreen'));
+    });
+
     test('violations land under their own check keys', () {
       // Retype a canonical token in app code + sneak INTERNET into the
       // manifest: C1 and C4 must each report, independently.

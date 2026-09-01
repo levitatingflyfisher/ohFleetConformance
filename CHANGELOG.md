@@ -1,5 +1,104 @@
 # Changelog
 
+## 0.10.0
+
+- **Strict C11 exemptions.** `FleetAppConfig.barLabelExemptions` records
+  keyed bar controls whose visible word the static scan cannot see (a face
+  built by a widget defined elsewhere), as `'lib/path.dart#<Key string>'`
+  with a reason. An empty reason, and an exemption matching no finding, are
+  findings. Written for Trellis's reader mode picker, whose `_BarMenuFace`
+  shows the current mode as a word.
+
+## 0.9.0
+
+- **C11 strict mode (opt-in).** `FleetCheck.c11StrictBarLabels` runs C11
+  with `strict: true`: a tooltip no longer satisfies it. An icon-only bar
+  button, or a `PopupMenuButton` whose face shows no `Text`, is a finding
+  naming `OhBarAction` / `OhBarOverflow` (openhearth_design 0.8.0). Use it
+  instead of `c11IconLabels`; it is outside every default set. Seeded red
+  on a tooltip-only `IconButton` and an icon-only `PopupMenuButton`; a
+  read-only run across the fleet found 16 real offenders in Reckon,
+  Trellis, StillLife and Furrow (see README) and none in nine apps.
+
+## 0.8.1
+
+- **C7 fonts reads package fonts.** ohStyle 0.7.1 ships Lora and Nunito as
+  `openhearth_design` package fonts, so an app can drop its own copies —
+  but C7 parsed only the app's pubspec and called such an app "no bundled
+  font families declared". C7 (and `bundledFontCoverage`) now also resolves
+  `openhearth_design` through the app's `.dart_tool/package_config.json`
+  (falling back to its pubspec `path:` dependency when `.dart_tool` is
+  absent) and includes that package's families as
+  `packages/openhearth_design/<Family>`. Every family, app or package, is
+  intersected: text in an `OhTypography` style lands in the package face.
+  Still fails closed: no app fonts and no package fonts is a finding, and a
+  package font file missing from disk is a finding naming the package.
+  Checked read-only on Sundial, Furrow, PunctumTemporis, Reckon, Hatch and
+  Peckish (zero findings, unchanged), and on a scratch app with no local
+  fonts against the real ohStyle faces (a seeded `≤` is flagged).
+
+## 0.8.0
+
+Every check below ships OUTSIDE `FleetAppConfig.defaultChecks`: an app
+opts in by adding it to `checks:` once the rollout has made that app green.
+Each was proven on a real tree without editing any app (scratch copies and
+historical `git archive` snapshots only).
+
+- **C9 routes (new)**: every screen has a way in. A `GoRoute` with a
+  builder must be reached by a matching path literal in authored `lib/`
+  code, a `goNamed`/`pushNamed` of its name, `goBranch` (stateful-shell
+  branch roots) or go_router's default `/`. Caught Lilt's `/name/:nameId`
+  at the audit-time snapshot (fixed since in 17ecef5), and on today's trees
+  finds StillLife's `/photo/view` (declared, named `photoViewer`, never
+  navigated to — the viewer is pushed with `MaterialPageRoute` instead).
+  Lullaby agrees with its own `router_doors_test` (zero orphans); deleting
+  one door in a scratch copy of Lullaby turns it red. Deliberate door-less
+  routes are recorded in `FleetAppConfig.routeExemptions` with a reason.
+- **C10 rawErrors (new)**: no raw exception as user-visible text. Reads the
+  first positional argument of `Text`/`SelectableText`, `TextSpan(text:)`
+  and `errorText:`; flags `$e`, `${error}`, `e.toString()`,
+  `${snapshot.error}` and friends, with `e`/`ex` only where the file binds
+  them as an error. Findings point to `OhErrorState` /
+  `ohFriendlyErrorMessage`. Today's trees: Lilt 7 (exactly the audit's six
+  screens plus `app.dart`), Lullaby 22, Peckish 1, StillLife 38, Reckon 31,
+  Furrow 8, Bulwark 6, Sundial 6, Glass 2; Mantle, Hatch,
+  PunctumTemporis, PrimingTrellis and porch 0.
+- **C11 iconLabels (new)**: an icon-only button in `AppBar`/`SliverAppBar`
+  `actions:` needs a tooltip or a visible `Text` in its icon; the finding
+  recommends icon plus short label (`TextButton.icon`) or a worded
+  `PopupMenuButton`, per the operator's item-45 ruling. `PopupMenuButton`
+  and labelled buttons are compliant. Today's trees: StillLife 10,
+  Lullaby 8, Lilt 1, Furrow 1; every other app 0.
+- **C12 accentVsError (new)**: the accent must not BE the error colour.
+  Each accent vs ohStyle's urgency role of the same brightness must stay
+  CIEDE2000 ≥ 12. Per the operator's colour ruling, red may be both warmth
+  and error, separated by "error = colour + icon + word" rather than hue,
+  so the floor only catches an accent that is effectively the error red;
+  colour-blind simulation is an informational note on a failing finding,
+  not a failure. `fromSeed` themes are judged by the primary Flutter
+  actually renders, not the seed. `FleetAppConfig.accentColors`
+  (`FleetAccent.light/dark`) records accents detection cannot resolve,
+  user presets included. Today's trees: every app passes (ohStyle 0.7.0
+  warmth 14.1 light / 16.6 dark) except Reckon and PunctumTemporis, which
+  must record `accentColors`; a scratch copy of Glass seeded with red500
+  renders a primary 9.7 from it and goes red.
+- **C5 primary-action profile (item 24)**: `A11ySweepProfile`
+  (`narrowLargeText` 320×640 at 1.0/3.0; `primaryAction` 360×640 at 1.3)
+  and `runPrimaryActionSweep`, which asserts the primary action is in the
+  tree and reachable (tappable, or scrolled into view) at 360dp × 1.3 and
+  then runs the 320dp × 3.0 overflow sweep. Reckon's onboarding could not
+  be finished at 1.3×: a `Column` with a `Spacer` and no scroll view
+  clipped its only working control off the bottom, and no sweep covered
+  it.
+  The opt-in `FleetCheck.c5PrimaryScreens` requires every class listed in
+  `FleetAppConfig.primaryActionScreens` to be named inside such a call in
+  `test/`: listing Reckon's `ModelOnboardingScreen` or Lullaby's
+  `FeedingLogScreen` today is a finding; a scratch copy with the sweep
+  written is clean. `runA11ySweep` is unchanged.
+- **`canonicalTokensByNameFrom`** (style.dart): the canonical tokens by
+  name, from the same colors.dart as `canonicalTokenValuesFrom` — one
+  parser, not a second.
+
 ## 0.7.0
 
 - **C8 (new)**: no bare `IconButton.filled(`/`IconButton.filledTonal(` in an

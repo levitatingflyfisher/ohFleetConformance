@@ -2,12 +2,17 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'checks/accent_vs_error.dart';
 import 'checks/android_permissions.dart';
 import 'checks/backup.dart';
 import 'checks/budgets.dart';
 import 'checks/fonts.dart';
 import 'checks/harness.dart';
 import 'checks/icon_buttons.dart';
+import 'checks/icon_labels.dart';
+import 'checks/primary_screens.dart';
+import 'checks/raw_errors.dart';
+import 'checks/routes.dart';
 import 'checks/style.dart';
 import 'findings.dart';
 
@@ -24,7 +29,9 @@ enum StyleTier { full, tokens }
 /// Waves earn checks progressively (an app that adopted backup v0.2.0 but
 /// not yet the style grammar enables c2 without c1); the campaign's ship
 /// gate is every app on the full set. C5 (the 320dp sweep) is a helper
-/// template, not a config-driven check — see `runA11ySweep`.
+/// template, not a config-driven check — see `runA11ySweep` — except its
+/// item-24 half, [c5PrimaryScreens], which checks that the screens an app
+/// lists are actually swept by `runPrimaryActionSweep`.
 ///
 /// C7 is deliberately OUTSIDE the default set: it only makes sense for an
 /// app that bundles its own type, and switching it on by default would
@@ -39,6 +46,10 @@ enum StyleTier { full, tokens }
 /// every app that currently has the bug already carries C7, so an app
 /// opting in adds `FleetCheck.c8IconButtons` straight to its own `checks:`
 /// set alongside whatever else it already runs.
+///
+/// C9 onward (0.8.0) are opt-in on the same terms: each is added to an
+/// app's `checks:` set by the rollout that makes that app green, and the
+/// default flips only when every app is.
 enum FleetCheck {
   c1Style,
   c2Backup,
@@ -47,6 +58,20 @@ enum FleetCheck {
   c6Harness,
   c7Fonts,
   c8IconButtons,
+  c9Routes,
+  c10RawErrors,
+  c11IconLabels,
+
+  /// C11's strict mode (opt-in, never in a default set): a tooltip no
+  /// longer passes; every bar command shows its word (`OhBarAction`, or
+  /// `OhBarOverflow` for a menu). Use it INSTEAD of [c11IconLabels] — its
+  /// findings are a superset.
+  c11StrictBarLabels,
+  c12AccentVsError,
+
+  /// Item 24's release-gate half of C5: the listed primary-action screens
+  /// are swept at 360dp × 1.3 by `runPrimaryActionSweep`.
+  c5PrimaryScreens,
 }
 
 /// One app's recorded standardization posture.
@@ -98,6 +123,30 @@ class FleetAppConfig {
 
   final Set<FleetCheck> checks;
 
+  /// C9 — routes that deliberately have no in-app door, keyed by full path
+  /// (or route name) with the reason: `{'/share/:id': 'deep link from the
+  /// share sheet only'}`. An empty reason, a key no route declares, and a
+  /// key whose route has since gained a door are all findings.
+  final Map<String, String> routeExemptions;
+
+  /// C12 — every accent the app paints as its primary, per theme
+  /// brightness, as RENDERED (after any `fromSeed` tone mapping), including
+  /// user-selectable presets. Empty = detect from `lib/`; recording this
+  /// replaces detection entirely.
+  final List<FleetAccent> accentColors;
+
+  /// C5-primaryScreens — widget class names of the screens whose primary
+  /// action must survive 360dp × 1.3 (onboarding, the main add/log
+  /// screen). Each must be pumped inside a `runPrimaryActionSweep(` call
+  /// under `test/`.
+  final Set<String> primaryActionScreens;
+
+  /// C11 strict — bar controls whose word the static scan cannot see (a
+  /// face built by a widget defined elsewhere), keyed
+  /// `'lib/path.dart#<Key string>'`, with the reason. An empty reason and a
+  /// key that matches no finding are findings.
+  final Map<String, String> barLabelExemptions;
+
   /// What every app runs. C7 is absent on purpose — see [FleetCheck].
   static const defaultChecks = {
     FleetCheck.c1Style,
@@ -123,6 +172,10 @@ class FleetAppConfig {
     this.designPackagePath = '../ohStyle/openhearth_design',
     this.requiredCiFlutterVersion = '3.38.7',
     this.checks = defaultChecks,
+    this.routeExemptions = const {},
+    this.accentColors = const [],
+    this.primaryActionScreens = const {},
+    this.barLabelExemptions = const {},
   });
 }
 
@@ -157,6 +210,26 @@ Map<FleetCheck, List<ConformanceFinding>> collectFleetFindings(
           ),
         FleetCheck.c7Fonts => checkFontCoverage(root: root),
         FleetCheck.c8IconButtons => checkNoBareIconButtonVariants(root: root),
+        FleetCheck.c9Routes => checkRouteReachability(
+            root: root,
+            exemptions: config.routeExemptions,
+          ),
+        FleetCheck.c10RawErrors => checkNoRawErrorText(root: root),
+        FleetCheck.c11IconLabels => checkAppBarIconLabels(root: root),
+        FleetCheck.c11StrictBarLabels => checkAppBarIconLabels(
+            root: root,
+            strict: true,
+            exemptions: config.barLabelExemptions,
+          ),
+        FleetCheck.c12AccentVsError => checkAccentVsError(
+            root: root,
+            designPackage: Directory('${root.path}/${config.designPackagePath}'),
+            declared: config.accentColors,
+          ),
+        FleetCheck.c5PrimaryScreens => checkPrimaryScreenSweeps(
+            root: root,
+            screens: config.primaryActionScreens,
+          ),
       },
     );
   }
@@ -191,6 +264,12 @@ String _checkLabel(FleetCheck check) => switch (check) {
       FleetCheck.c6Harness => 'C6-harness',
       FleetCheck.c7Fonts => 'C7-fonts',
       FleetCheck.c8IconButtons => 'C8-iconButtons',
+      FleetCheck.c9Routes => 'C9-routes',
+      FleetCheck.c10RawErrors => 'C10-rawErrors',
+      FleetCheck.c11IconLabels => 'C11-iconLabels',
+      FleetCheck.c11StrictBarLabels => 'C11-strictBarLabels',
+      FleetCheck.c12AccentVsError => 'C12-accentVsError',
+      FleetCheck.c5PrimaryScreens => 'C5-primaryScreens',
     };
 
 List<ConformanceFinding> _styleFindings(FleetAppConfig config, Directory root) {
