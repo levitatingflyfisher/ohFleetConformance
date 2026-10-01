@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'checks/accent_vs_error.dart';
+import 'checks/asset_text.dart';
 import 'checks/android_permissions.dart';
 import 'checks/backup.dart';
 import 'checks/budgets.dart';
@@ -13,6 +14,7 @@ import 'checks/icon_labels.dart';
 import 'checks/primary_screens.dart';
 import 'checks/raw_errors.dart';
 import 'checks/routes.dart';
+import 'checks/snack_bars.dart';
 import 'checks/style.dart';
 import 'checks/web_self_hosted.dart';
 import 'findings.dart';
@@ -78,6 +80,17 @@ enum FleetCheck {
   /// `web/flutter_bootstrap.js` points CanvasKit and fallback fonts at the
   /// app's own origin, and the app bundles a text font.
   c13WebSelfHosted,
+
+  /// C7-assetText (opt-in): C7's glyph guard over the app's bundled text
+  /// assets (JSON string values, SVG `<text>`, plain text files), not only
+  /// the literals in `lib/`. Only for an app that ships text assets: with
+  /// none, it is a finding, never a free pass.
+  c7AssetText,
+
+  /// C14: every `SnackBar` with an `action:` states `persist:` (Flutter
+  /// otherwise keeps it up until tapped, across screens). In the default
+  /// set: every Flutter app in the fleet was green when it landed.
+  c14SnackBarPersist,
 }
 
 /// One app's recorded standardization posture.
@@ -153,8 +166,19 @@ class FleetAppConfig {
   /// key that matches no finding are findings.
   final Map<String, String> barLabelExemptions;
 
+  /// C7-assetText — asset paths (as shipped, `assets/x.json`) whose text is
+  /// never drawn, with the reason. A blank reason and a path that is not a
+  /// shipped text asset are findings.
+  final Map<String, String> assetTextExemptions;
+
+  /// C7-assetText — asset paths whose extended Latin letters are drawn on
+  /// purpose through the engine's fallback fonts (place names), with the
+  /// reason. Everything else in the file is still checked.
+  final Map<String, String> assetTextLatinFallback;
+
   /// What every app runs. C7 is absent on purpose — see [FleetCheck].
   static const defaultChecks = {
+    FleetCheck.c14SnackBarPersist,
     FleetCheck.c1Style,
     FleetCheck.c2Backup,
     FleetCheck.c3Budgets,
@@ -182,6 +206,8 @@ class FleetAppConfig {
     this.accentColors = const [],
     this.primaryActionScreens = const {},
     this.barLabelExemptions = const {},
+    this.assetTextExemptions = const {},
+    this.assetTextLatinFallback = const {},
   });
 }
 
@@ -216,6 +242,7 @@ Map<FleetCheck, List<ConformanceFinding>> collectFleetFindings(
           ),
         FleetCheck.c7Fonts => checkFontCoverage(root: root),
         FleetCheck.c8IconButtons => checkNoBareIconButtonVariants(root: root),
+        FleetCheck.c14SnackBarPersist => checkSnackBarPersist(root: root),
         FleetCheck.c9Routes => checkRouteReachability(
             root: root,
             exemptions: config.routeExemptions,
@@ -237,6 +264,11 @@ Map<FleetCheck, List<ConformanceFinding>> collectFleetFindings(
             screens: config.primaryActionScreens,
           ),
         FleetCheck.c13WebSelfHosted => checkWebSelfHosted(root: root),
+        FleetCheck.c7AssetText => checkAssetTextCoverage(
+            root: root,
+            exemptions: config.assetTextExemptions,
+            latinFallback: config.assetTextLatinFallback,
+          ),
       },
     );
   }
@@ -271,6 +303,7 @@ String _checkLabel(FleetCheck check) => switch (check) {
       FleetCheck.c6Harness => 'C6-harness',
       FleetCheck.c7Fonts => 'C7-fonts',
       FleetCheck.c8IconButtons => 'C8-iconButtons',
+      FleetCheck.c14SnackBarPersist => 'C14-snackBarPersist',
       FleetCheck.c9Routes => 'C9-routes',
       FleetCheck.c10RawErrors => 'C10-rawErrors',
       FleetCheck.c11IconLabels => 'C11-iconLabels',
@@ -278,6 +311,7 @@ String _checkLabel(FleetCheck check) => switch (check) {
       FleetCheck.c12AccentVsError => 'C12-accentVsError',
       FleetCheck.c5PrimaryScreens => 'C5-primaryScreens',
       FleetCheck.c13WebSelfHosted => 'C13-webSelfHosted',
+      FleetCheck.c7AssetText => 'C7-assetText',
     };
 
 List<ConformanceFinding> _styleFindings(FleetAppConfig config, Directory root) {

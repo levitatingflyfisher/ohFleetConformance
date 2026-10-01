@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.16.0
+
+- **C14-snackBarPersist (default set).** Flutter defaults a `SnackBar`'s
+  `persist` to `action != null`, so any snack bar with an action stays up
+  until tapped and follows the person across screens. Lullaby's quick-log
+  line sat there for minutes on the emulator; a fleet sweep found the
+  same in Sundial (4), Peckish (1) and Trellis (3). Every `SnackBar(` with
+  an `action:` must now say `persist:`. A check rather than an ohStyle
+  helper: the next plain `SnackBar(` would bypass a helper silently, and
+  a check fails loudly in every app. In the default set because every
+  Flutter app was green on it when it landed; porch and Trellis, which
+  list their checks explicitly, add it by name.
+
+## 0.15.0
+
+- **C7-assetText Latin fallback allowance
+  (`FleetAppConfig.assetTextLatinFallback`).** A data file the app draws on
+  purpose beyond its bundled faces, such as PunctumTemporis's list of
+  place names (Vietnamese and other Latin Extended letters: Hà Nội, İzmir),
+  relies on the engine's fallback fonts: the phone's system fonts natively,
+  the shared Noto mirror on the web. Exempting the whole file would leave
+  nothing checked (the check then fails, by design). The allowance passes
+  only extended Latin (U+0100–U+02AF, U+0300–U+036F, U+1E00–U+1EFF) in the
+  named file; every other character there is still checked (an arrow or a
+  CJK name is still a finding), and the file counts as checked. A blank
+  reason or a stale path is a finding.
+
+## 0.14.0
+
+- **C7-assetText (opt-in, `FleetCheck.c7AssetText`).** C7 swept the
+  string literals in `lib/` and never saw the words that live in data
+  files, so a deck title or a name list could print a box with every check
+  green. The new check reads the app's `flutter: assets:` (directory
+  entries ship only their direct files, as Flutter does) and checks what
+  each text file draws: JSON string values (sniffed by content, so a
+  `.ohcourse` counts; keys are identifiers and skipped), SVG `<text>` and
+  `<tspan>` with character references decoded (comments and metadata are
+  never drawn), and every character of any other UTF-8 file. Binary files
+  are skipped; a text-named file that is not UTF-8 is a finding. The web
+  emoji rule is C7's. `FleetAppConfig.assetTextExemptions` records a
+  never-drawn asset with its reason; a blank reason or a stale path is a
+  finding. It cannot pass by finding nothing: no readable bundled font, a
+  declared asset missing on disk, and no text asset checked are all
+  findings, and only a file that draws words counts as checked (an empty
+  `.gitkeep` or an SVG with no `<text>` does not, which StillLife's
+  `assets/icons/.gitkeep` showed). Outside every default set: enabling
+  it in an app with no text assets would be a rule about nothing. Generalises Mantle's own
+  `content_glyphs_test`. Proven red on Mantle with a `≤` seeded into
+  `assets/data/spot.json`, green once reverted.
+
 ## 0.13.0
 
 - **C13 pins the fallback-font path.** `fontFallbackBaseUrl` must be
