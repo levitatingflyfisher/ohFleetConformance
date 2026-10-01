@@ -14,6 +14,7 @@ import 'checks/primary_screens.dart';
 import 'checks/raw_errors.dart';
 import 'checks/routes.dart';
 import 'checks/style.dart';
+import 'checks/web_self_hosted.dart';
 import 'findings.dart';
 
 /// How an app consumes the design grammar (spec §8, P1 two-tier standard).
@@ -72,6 +73,11 @@ enum FleetCheck {
   /// Item 24's release-gate half of C5: the listed primary-action screens
   /// are swept at 360dp × 1.3 by `runPrimaryActionSweep`.
   c5PrimaryScreens,
+
+  /// C13 (opt-in): the web build loads nothing from Google's CDNs —
+  /// `web/flutter_bootstrap.js` points CanvasKit and fallback fonts at the
+  /// app's own origin, and the app bundles a text font.
+  c13WebSelfHosted,
 }
 
 /// One app's recorded standardization posture.
@@ -230,6 +236,7 @@ Map<FleetCheck, List<ConformanceFinding>> collectFleetFindings(
             root: root,
             screens: config.primaryActionScreens,
           ),
+        FleetCheck.c13WebSelfHosted => checkWebSelfHosted(root: root),
       },
     );
   }
@@ -270,6 +277,7 @@ String _checkLabel(FleetCheck check) => switch (check) {
       FleetCheck.c11StrictBarLabels => 'C11-strictBarLabels',
       FleetCheck.c12AccentVsError => 'C12-accentVsError',
       FleetCheck.c5PrimaryScreens => 'C5-primaryScreens',
+      FleetCheck.c13WebSelfHosted => 'C13-webSelfHosted',
     };
 
 List<ConformanceFinding> _styleFindings(FleetAppConfig config, Directory root) {

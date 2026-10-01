@@ -19,9 +19,25 @@ const _check = 'C7-fonts';
 /// source sweep, not a list of the strings someone remembered: the next em
 /// dash or arrow gets caught the day it is typed.
 ///
-/// Two exemptions are real, not convenience. Emoji come from the platform's
-/// colour font, never ours. A character class like `[\s$€£¥₹]` exists so a
-/// pasted price parses — it is never drawn, and "fixing" it breaks input.
+/// Escapes are decoded first. `'Skip \u2192'` is plain ASCII in the source
+/// but prints an arrow; StillLife's first web screen drew three boxes this
+/// sweep could not see, because it read the raw runes. Raw strings
+/// (`r'\u2192'`) print the backslash, so they are left alone.
+///
+/// One exemption is real, not convenience: a character class like
+/// `[\s$€£¥₹]` exists so a pasted price parses — it is never drawn, and
+/// "fixing" it breaks input.
+///
+/// Emoji are exempt only for an app with no web build. On Android they come
+/// from the platform's colour font. On the web they do not: since C13 the
+/// engine fetches fallback fonts from the fleet's shared same-origin copy
+/// ([kFleetFontFallbackBaseUrl]). That covers what users type, but the
+/// app's own copy should not depend on it: the colour-emoji splits are
+/// hundreds of KB each, fetched on first draw, and an installed PWA used
+/// offline (or served anywhere without that copy) draws a box and re-requests
+/// the missing font on every frame. An app with `web/index.html` therefore
+/// has no emoji exemption, and the zero-width joiner and variation selectors
+/// that glue emoji together are findings too.
 ///
 /// The check is written so it cannot pass by finding nothing: no declared
 /// fonts, an unreadable font file, an implausibly small cmap, and an empty
@@ -99,6 +115,7 @@ List<ConformanceFinding> checkFontCoverage({required Directory root}) {
     return findings;
   }
 
+  final web = File('${root.path}/web/index.html').existsSync();
   final offenders = <String, Set<String>>{};
   for (final file in sources) {
     for (final line in file.readAsLinesSync()) {
@@ -107,8 +124,11 @@ List<ConformanceFinding> checkFontCoverage({required Directory root}) {
       }
       if (line.trimLeft().startsWith('//')) continue; // prose, never rendered
       for (final m in _quoted.allMatches(line)) {
-        for (final r in m[0]!.runes) {
-          if (r > 0x7F && !_isEmoji(r) && !drawable.contains(r)) {
+        final raw = m.start > 0 && (line[m.start - 1] == 'r' ||
+            line[m.start - 1] == 'R');
+        final printed = raw ? m[0]! : _decodeEscapes(m[0]!);
+        for (final r in printed.runes) {
+          if (_undrawable(r, drawable, web: web)) {
             offenders
                 .putIfAbsent(_describe(r), () => <String>{})
                 .add(_relative(file.path, root));
@@ -122,7 +142,9 @@ List<ConformanceFinding> checkFontCoverage({required Directory root}) {
     findings.add(ConformanceFinding(
       _check,
       '${e.key} is printed in ${e.value.join(', ')} but no bundled font can '
-      'draw it — it renders as a box',
+      'draw it — it renders as a box'
+      '${web ? ' (this app ships a web build, where no platform font fills '
+          'the gap — emoji included)' : ''}',
     ));
   }
   return findings;
@@ -148,10 +170,69 @@ Set<int> bundledFontCoverage({required Directory root}) {
 
 /// The characters of [text] that [drawable] cannot render, described for a
 /// failure message. Empty means the string is safe to print.
-List<String> undrawableIn(String text, Set<int> drawable) => [
+///
+/// Pass `web: true` for text an app's web build prints: there the emoji
+/// exemption does not hold (see [checkFontCoverage]).
+List<String> undrawableIn(String text, Set<int> drawable,
+        {bool web = false}) =>
+    [
       for (final r in text.runes)
-        if (r > 0x7F && !_isEmoji(r) && !drawable.contains(r)) _describe(r),
+        if (_undrawable(r, drawable, web: web)) _describe(r),
     ];
+
+bool _undrawable(int r, Set<int> drawable, {required bool web}) =>
+    r > 0x7F && (web || !_isEmoji(r)) && !drawable.contains(r);
+
+/// What a quoted (non-raw) Dart literal prints: `\uXXXX`, `\u{X…}`, `\xHH`
+/// and the single-character escapes resolved. Code units are assembled
+/// first so an escaped surrogate pair (`\uD83D\uDC64`) becomes one emoji,
+/// not two lone surrogates.
+String _decodeEscapes(String literal) {
+  final units = <int>[];
+  final s = literal;
+  var i = 0;
+  while (i < s.length) {
+    final c = s.codeUnitAt(i);
+    if (c != 0x5C || i + 1 >= s.length) {
+      units.add(c);
+      i++;
+      continue;
+    }
+    final e = s[i + 1];
+    int? cp;
+    var consumed = 2;
+    if (e == 'u' && i + 2 < s.length && s[i + 2] == '{') {
+      final close = s.indexOf('}', i + 3);
+      if (close > 0) {
+        cp = int.tryParse(s.substring(i + 3, close), radix: 16);
+        consumed = close - i + 1;
+      }
+    } else if (e == 'u' && i + 6 <= s.length) {
+      cp = int.tryParse(s.substring(i + 2, i + 6), radix: 16);
+      consumed = 6;
+    } else if (e == 'x' && i + 4 <= s.length) {
+      cp = int.tryParse(s.substring(i + 2, i + 4), radix: 16);
+      consumed = 4;
+    }
+    if (cp != null) {
+      if (cp > 0xFFFF) {
+        final v = cp - 0x10000;
+        units
+          ..add(0xD800 + (v >> 10))
+          ..add(0xDC00 + (v & 0x3FF));
+      } else {
+        units.add(cp);
+      }
+    } else {
+      // \n, \', \\, \$ and friends print ASCII; the second character
+      // stands for itself as far as glyph coverage goes.
+      units.add(s.codeUnitAt(i + 1));
+      consumed = 2;
+    }
+    i += consumed;
+  }
+  return String.fromCharCodes(units);
+}
 
 final _quoted = RegExp(r"'([^'\\\n]|\\.)*'|" r'"([^"\\\n]|\\.)*"');
 

@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.13.0
+
+- **C13 pins the fallback-font path.** `fontFallbackBaseUrl` must be
+  exactly `kFleetFontFallbackBaseUrl`, `/fonts/flutter-fallback/`. Every
+  PWA is served from `levitatingflyfisher.github.io/<App>/`, and the user
+  site at that origin's root (`OpenHearth/_ohsite_build`) now mirrors the
+  engine's on-demand fallback fonts there once for the whole fleet, so a
+  glyph the bundled fonts lack (ř, box drawing, CJK, emoji a user types)
+  draws instead of showing a box while the engine retries a 404 every
+  frame. An app-relative path (the old `fallback-fonts/`) resolves under
+  `/<App>/`, where nothing is shipped, and is now a finding; so is a
+  near miss such as a missing trailing slash. Absolute and
+  protocol-relative URLs stay findings. Proven red on StillLife with its
+  old bootstrap, green with the shared path.
+- C7's doc comment no longer says the web serves no fallback fonts; the
+  web emoji rule stands, for the offline and byte-cost reasons it gives.
+
+## 0.12.0
+
+- **C7 decodes escapes.** The sweep read each literal's raw runes, so
+  `'Skip \u2192'` was plain ASCII to it and passed while the app drew a
+  box. Non-raw literals now have `\uXXXX`, `\u{X…}` and `\xHH` resolved
+  (escaped surrogate pairs become one code point) before coverage is
+  checked; raw strings are left as written.
+- **C7 drops the emoji exemption for apps that ship a web build.** Since
+  C13 the web engine's fallback fonts come from the app's own origin,
+  which serves none, so an emoji draws as a box there (and the engine
+  re-requests the missing font every frame). An app with `web/index.html`
+  now gets every emoji, zero-width joiner and variation selector its
+  bundled fonts lack as a finding. Native-only apps keep the exemption.
+  `undrawableIn` takes `web: true` for the same rule in an app's own
+  tests. Caught, read-only across the fleet: StillLife (`→` in onboarding,
+  the 👤 default avatar and the profile-avatar emoji set), PunctumTemporis
+  (`→` in the date-range dialog), Lilt (`τ` in the solo results),
+  Sundial (🌿 in profiles) and porch (activity emoji). Nine (Bulwark,
+  Furrow, Glass, Hatch, Lullaby, Mantle, Peckish, Reckon, PrimingTrellis)
+  stayed at zero findings.
+
+## 0.11.0
+
+- **C13 webSelfHosted (opt-in).** `FleetCheck.c13WebSelfHosted` fails an
+  app whose web build would load from Google's CDNs: no
+  `web/flutter_bootstrap.js` (Flutter's generated default fetches the
+  Roboto fallback from `fonts.gstatic.com`, and CanvasKit from
+  `www.gstatic.com` unless built with `--no-web-resources-cdn`), a loader
+  config without relative `canvasKitBaseUrl` and `fontFallbackBaseUrl`, a
+  Google CDN host in `web/`, a cross-origin `src`/`href` in `index.html`,
+  or no bundled font for basic Latin (without the CDN Roboto, such an app
+  draws no text on the web). An absent `web/`, `index.html`, bootstrap or
+  loader call is a finding. Caught WeatherGlass, whose PWA fetched
+  CanvasKit and Roboto from gstatic on every load.
+
 ## 0.10.0
 
 - **Strict C11 exemptions.** `FleetAppConfig.barLabelExemptions` records

@@ -19,5 +19,6 @@ export 'src/checks/primary_screens.dart';
 export 'src/checks/raw_errors.dart';
 export 'src/checks/routes.dart';
 export 'src/checks/style.dart';
+export 'src/checks/web_self_hosted.dart';
 export 'src/findings.dart';
 export 'src/fleet_conformance.dart';

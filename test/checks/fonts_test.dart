@@ -332,6 +332,111 @@ void main() {
     });
   });
 
+  group('escapes are decoded before the sweep', () {
+    // Every fixture below writes a literal backslash in the Dart source, so
+    // the old raw-rune sweep saw only ASCII and passed it.
+    test('a \\uXXXX escape the fonts cannot draw is a finding', () {
+      app(families: {'Fix': latin}, lib: {
+        'onboarding.dart': r"const next = 'Skip \u2192';",
+      });
+      final findings = checkFontCoverage(root: root);
+      expect(findings, hasLength(1));
+      expect(findings.single.message, contains('U+2192'));
+      expect(findings.single.message, contains('onboarding.dart'));
+    });
+
+    test('a \\u{...} escape is decoded too', () {
+      app(families: {'Fix': latin}, lib: {
+        'results.dart': r'const tau = "Kendall \u{3C4}";',
+      });
+      final findings = checkFontCoverage(root: root);
+      expect(findings, hasLength(1));
+      expect(findings.single.message, contains('U+03C4'));
+    });
+
+    test('a \\xHH escape is decoded too', () {
+      app(families: {'Fix': latin}, lib: {
+        'a.dart': r"const x = 'a\xB7b';", // drawable: middle dot
+        'b.dart': r"const y = 'a\x80b';", // a C1 control: not drawable
+      });
+      final findings = checkFontCoverage(root: root);
+      expect(findings, hasLength(1));
+      expect(findings.single.message, contains('U+0080'));
+    });
+
+    test('a drawable escape is silent', () {
+      app(families: {'Fix': latin}, lib: {
+        'main.dart': r"const s = 'That\u2019s me \u2014 caf\u00e9';",
+      });
+      expect(checkFontCoverage(root: root), isEmpty);
+    });
+
+    test('a raw string is not decoded — r"\\u2192" prints a backslash', () {
+      app(families: {'Fix': latin}, lib: {
+        'main.dart': r"const s = r'\u2192';" "\n" r'const t = r"\u{3C4}";',
+      });
+      expect(checkFontCoverage(root: root), isEmpty);
+    });
+
+    test('an escaped backslash does not start an escape', () {
+      app(families: {'Fix': latin}, lib: {
+        'main.dart': r"const s = 'C:\\u2192';",
+      });
+      expect(checkFontCoverage(root: root), isEmpty);
+    });
+  });
+
+  group('apps that ship a web build', () {
+    void web() {
+      Directory('${root.path}/web').createSync();
+      File('${root.path}/web/index.html').writeAsStringSync('<html></html>');
+    }
+
+    test('emoji are findings: the web has no platform colour font', () {
+      app(families: {'Fix': latin}, lib: {
+        'profile.dart': "const avatar = '👤';",
+      });
+      web();
+      final findings = checkFontCoverage(root: root);
+      expect(findings, hasLength(1));
+      expect(findings.single.message, contains('U+1F464'));
+      expect(findings.single.message, contains('web'));
+    });
+
+    test('an escaped emoji surrogate pair decodes to one emoji', () {
+      app(families: {'Fix': latin}, lib: {
+        'profile.dart': r"const avatar = '\uD83D\uDC64';",
+      });
+      web();
+      final findings = checkFontCoverage(root: root);
+      expect(findings, hasLength(1));
+      expect(findings.single.message, contains('U+1F464'));
+    });
+
+    test('ZWJ and variation selectors are findings too', () {
+      app(families: {'Fix': latin}, lib: {
+        'a.dart': "const heart = 'x\u{FE0F}';",
+        'b.dart': "const glue = 'x\u200Dy';",
+      });
+      web();
+      expect(checkFontCoverage(root: root), hasLength(2));
+    });
+
+    test('without web/index.html emoji keep their native exemption', () {
+      app(families: {'Fix': latin}, lib: {
+        'profile.dart': r"const avatar = '\u{1F464}';",
+      });
+      Directory('${root.path}/web').createSync(); // no index.html: no build
+      expect(checkFontCoverage(root: root), isEmpty);
+    });
+
+    test('undrawableIn is strict when asked for the web', () {
+      final drawable = {for (var c = 0x20; c < 0x7F; c++) c};
+      expect(undrawableIn('🍎 pie', drawable), isEmpty);
+      expect(undrawableIn('🍎 pie', drawable, web: true), hasLength(1));
+    });
+  });
+
   group('the check cannot pass vacuously', () {
     test('an app that declares no fonts is a finding, not a free pass', () {
       app(families: const {});
